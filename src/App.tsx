@@ -372,6 +372,7 @@ export const App: React.FC = () => {
                 description: draft.description,
                 recurrence: draft.recurrence,
                 recurrenceUntil: draft.recurrenceUntil,
+                customRecurrence: draft.customRecurrence,
                 imageUrl: draft.imageUrl,
                 imageName: draft.imageName,
                 isTask: draft.isTask,
@@ -393,6 +394,7 @@ export const App: React.FC = () => {
         description: draft.description,
         recurrence: draft.recurrence,
         recurrenceUntil: draft.recurrenceUntil,
+        customRecurrence: draft.customRecurrence,
         imageUrl: draft.imageUrl,
         imageName: draft.imageName,
         isTask: draft.isTask,
@@ -451,6 +453,7 @@ export const App: React.FC = () => {
       description: ev.description,
       recurrence: ev.recurrence,
       recurrenceUntil: ev.recurrenceUntil,
+      customRecurrence: ev.customRecurrence,
       imageUrl: ev.imageUrl,
       imageName: ev.imageName,
       isTask: ev.isTask,
@@ -472,6 +475,7 @@ export const App: React.FC = () => {
       description: ev.description,
       recurrence: ev.recurrence,
       recurrenceUntil: ev.recurrenceUntil,
+      customRecurrence: ev.customRecurrence,
       imageUrl: ev.imageUrl,
       imageName: ev.imageName,
       isTask: ev.isTask,
@@ -538,12 +542,10 @@ export const App: React.FC = () => {
   const handleApplySplitWeekDemo = useCallback((monthDate: Date) => {
     const weeks = getMonthWeeks(monthDate);
     const demoRotation: ThemeId[] = [
-      'summer',
+      'light',
       'wednesday',
       'ooo',
-      'spring',
-      'autumn',
-      'winter',
+      'dark',
     ];
     setThemePrefs((prev) => {
       const nextWeeks = { ...prev.weekThemes };
