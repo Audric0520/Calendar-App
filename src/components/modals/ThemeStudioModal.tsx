@@ -195,7 +195,7 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
                   <strong className="text-theme-text">
                     {format(currentDate, 'MMMM yyyy')}
                   </strong>
-                  . For example, set Week 1 to <em>Summer</em> and Week 2 to{' '}
+                  . For example, set Week 1 to <em>Light Mode</em> and Week 2 to{' '}
                   <em>Wednesday</em>!
                 </p>
               </div>

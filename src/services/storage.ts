@@ -3,6 +3,7 @@ import {
   CategoryTag,
   EventCategory,
   NotificationSettings,
+  ThemeId,
   ThemePreferences,
 } from '../types/calendar';
 import { DEFAULT_CATEGORY_TAGS } from '../constants/categories';
@@ -22,8 +23,10 @@ const LS_KEYS = {
   VISIBLE_CATEGORIES: 'chronopalette_visible_categories_v2',
 };
 
+const VALID_THEMES = new Set<ThemeId>(['light', 'dark', 'ooo', 'wednesday']);
+
 const DEFAULT_THEME_PREFS: ThemePreferences = {
-  globalTheme: 'winter',
+  globalTheme: 'light',
   monthThemes: {},
   weekThemes: {},
 };
@@ -196,10 +199,30 @@ export function loadThemePreferences(): ThemePreferences {
     const raw = localStorage.getItem(LS_KEYS.THEME_PREFS);
     if (!raw) return DEFAULT_THEME_PREFS;
     const parsed = JSON.parse(raw) as Partial<ThemePreferences>;
+
+    const globalTheme =
+      parsed.globalTheme && VALID_THEMES.has(parsed.globalTheme)
+        ? parsed.globalTheme
+        : DEFAULT_THEME_PREFS.globalTheme;
+
+    const monthThemes: Record<string, ThemeId> = {};
+    if (parsed.monthThemes) {
+      for (const [k, v] of Object.entries(parsed.monthThemes)) {
+        if (VALID_THEMES.has(v)) monthThemes[k] = v;
+      }
+    }
+
+    const weekThemes: Record<string, ThemeId> = {};
+    if (parsed.weekThemes) {
+      for (const [k, v] of Object.entries(parsed.weekThemes)) {
+        if (VALID_THEMES.has(v)) weekThemes[k] = v;
+      }
+    }
+
     return {
-      globalTheme: parsed.globalTheme ?? DEFAULT_THEME_PREFS.globalTheme,
-      monthThemes: parsed.monthThemes ?? {},
-      weekThemes: parsed.weekThemes ?? {},
+      globalTheme,
+      monthThemes,
+      weekThemes,
     };
   } catch {
     return DEFAULT_THEME_PREFS;

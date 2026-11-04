@@ -1,16 +1,39 @@
 export type CalendarView = 'month' | 'week' | 'day';
 
 export type ThemeId =
-  | 'spring'
-  | 'summer'
-  | 'autumn'
-  | 'winter'
+  | 'light'
+  | 'dark'
   | 'ooo'
   | 'wednesday';
 
-export type ThemeGroup = '4 Seasons' | 'Kamen Rider OOO' | 'Wednesday';
+export type ThemeGroup = 'Standard Modes' | 'Kamen Rider OOO' | 'Wednesday';
 
-export type RecurrenceRule = 'none' | 'daily' | 'weekly' | 'monthly';
+export type RecurrenceRule =
+  | 'none'
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly'
+  | 'custom';
+
+export type CustomRepeatUnit = 'day' | 'week' | 'month' | 'year';
+
+export type CustomRepeatEndType = 'never' | 'on' | 'after';
+
+export interface CustomRecurrenceConfig {
+  /** Repeat every N units (>= 1) */
+  interval: number;
+  /** Unit of repetition */
+  unit: CustomRepeatUnit;
+  /** Selected weekdays when unit === 'week' (0 = Sunday .. 6 = Saturday) */
+  daysOfWeek?: number[];
+  /** Termination mode */
+  endType: CustomRepeatEndType;
+  /** Inclusive end date "YYYY-MM-DD" when endType === 'on' */
+  endDate?: string;
+  /** Total occurrences (>= 1) when endType === 'after' */
+  occurrences?: number;
+}
 
 export type DefaultCategoryId =
   | 'class-sched'
@@ -38,8 +61,10 @@ export interface CalendarEvent {
   location: string;
   description: string;
   recurrence: RecurrenceRule;
-  /** Optional YYYY-MM-DD end date for recurring series */
+  /** Optional YYYY-MM-DD end date for preset recurring series */
   recurrenceUntil?: string;
+  /** Optional granular configuration when recurrence === 'custom' */
+  customRecurrence?: CustomRecurrenceConfig;
   /** Base64 Data URL (uploaded file) or external image URL */
   imageUrl?: string;
   imageName?: string;
@@ -95,6 +120,7 @@ export interface EventDraft {
   description: string;
   recurrence: RecurrenceRule;
   recurrenceUntil?: string;
+  customRecurrence?: CustomRecurrenceConfig;
   imageUrl?: string;
   imageName?: string;
   isTask?: boolean;

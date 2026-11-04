@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { EventOccurrence } from '../../types/calendar';
 import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
+import { formatRecurrenceSummary } from '../../utils/calendarMath';
 
 interface EventDetailModalProps {
   occurrence: EventOccurrence | null;
@@ -188,11 +189,13 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               {event.recurrence !== 'none' && (
                 <div className="flex items-center gap-2.5 text-theme-text-secondary text-xs">
                   <Repeat className="w-4 h-4 text-theme-accent shrink-0" />
-                  <span className="font-semibold capitalize">
-                    Repeats {event.recurrence}
-                    {event.recurrenceUntil
-                      ? ` until ${event.recurrenceUntil}`
-                      : ''}
+                  <span className="font-semibold">
+                    {formatRecurrenceSummary({
+                      recurrence: event.recurrence,
+                      recurrenceUntil: event.recurrenceUntil,
+                      customRecurrence: event.customRecurrence,
+                      start: event.start,
+                    })}
                   </span>
                 </div>
               )}

@@ -15,61 +15,33 @@ export interface ThemeDefinition {
 }
 
 export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
-  spring: {
-    id: 'spring',
-    name: 'Spring Blossom',
-    shortName: 'Spring',
-    group: '4 Seasons',
-    tagline: 'Pastel greens & sakura pink',
+  light: {
+    id: 'light',
+    name: 'Light Mode',
+    shortName: 'Light Mode',
+    group: 'Standard Modes',
+    tagline: 'Clean daylight white & cobalt blue',
     description:
-      'Soft celadon greens, sakura blossom pinks, and delicate floral borders.',
+      'Crisp daylight white surfaces, subtle slate grid lines, and modern cobalt blue accents.',
     isDark: false,
-    swatches: ['#dcfce7', '#f472b6', '#4ade80'],
-    badgeBg: '#fce7f3',
-    badgeText: '#9d174d',
-    badgeBorder: '#f472b6',
+    swatches: ['#ffffff', '#2563eb', '#e2e8f0'],
+    badgeBg: '#dbeafe',
+    badgeText: '#1d4ed8',
+    badgeBorder: '#93c5fd',
   },
-  summer: {
-    id: 'summer',
-    name: 'Summer Solstice',
-    shortName: 'Summer',
-    group: '4 Seasons',
-    tagline: 'Oceanic blues & golden sun',
+  dark: {
+    id: 'dark',
+    name: 'Dark Mode',
+    shortName: 'Dark Mode',
+    group: 'Standard Modes',
+    tagline: 'Midnight slate & soft sky blue',
     description:
-      'Vibrant oceanic cyan-blues, golden sunshine yellows, and bright high-contrast grid lines.',
-    isDark: false,
-    swatches: ['#0284c7', '#facc15', '#38bdf8'],
-    badgeBg: '#fef9c3',
-    badgeText: '#0369a1',
-    badgeBorder: '#38bdf8',
-  },
-  autumn: {
-    id: 'autumn',
-    name: 'Autumn Harvest',
-    shortName: 'Autumn',
-    group: '4 Seasons',
-    tagline: 'Terracotta, amber & burnt oak',
-    description:
-      'Warm terracotta orange, spiced golden amber, and rich burnt oak tones.',
-    isDark: false,
-    swatches: ['#c2410c', '#f59e0b', '#78350f'],
-    badgeBg: '#ffedd5',
-    badgeText: '#9a3412',
-    badgeBorder: '#d97706',
-  },
-  winter: {
-    id: 'winter',
-    name: 'Winter Frost',
-    shortName: 'Winter',
-    group: '4 Seasons',
-    tagline: 'Frost white, icy teal & silver',
-    description:
-      'Crystalline frost white surfaces, glacial teal accents, and muted slate silver highlights.',
-    isDark: false,
-    swatches: ['#f8fafc', '#14b8a6', '#94a3b8'],
-    badgeBg: '#ccfbf1',
-    badgeText: '#0f766e',
-    badgeBorder: '#94a3b8',
+      'Sleek low-glare midnight slate surfaces with refined contrast and soft sky-blue highlights.',
+    isDark: true,
+    swatches: ['#0b0f19', '#1e2638', '#60a5fa'],
+    badgeBg: '#1e293b',
+    badgeText: '#93c5fd',
+    badgeBorder: '#3b82f6',
   },
   ooo: {
     id: 'ooo',
@@ -102,23 +74,19 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
 };
 
 export const THEME_LIST: ThemeDefinition[] = [
-  THEME_DEFINITIONS.spring,
-  THEME_DEFINITIONS.summer,
-  THEME_DEFINITIONS.autumn,
-  THEME_DEFINITIONS.winter,
+  THEME_DEFINITIONS.light,
+  THEME_DEFINITIONS.dark,
   THEME_DEFINITIONS.ooo,
   THEME_DEFINITIONS.wednesday,
 ];
 
 export const THEME_GROUPS: { group: ThemeGroup; subtitle: string; themes: ThemeDefinition[] }[] = [
   {
-    group: '4 Seasons',
-    subtitle: 'Natural seasonal palettes from sakura bloom to crystalline frost',
+    group: 'Standard Modes',
+    subtitle: 'Classic clean Light Mode and sleek low-glare Dark Mode',
     themes: [
-      THEME_DEFINITIONS.spring,
-      THEME_DEFINITIONS.summer,
-      THEME_DEFINITIONS.autumn,
-      THEME_DEFINITIONS.winter,
+      THEME_DEFINITIONS.light,
+      THEME_DEFINITIONS.dark,
     ],
   },
   {

@@ -32,7 +32,7 @@ export function unlockAudioOnFirstInteraction(): void {
   window.addEventListener('keydown', unlock, { passive: true });
 }
 
-export async function playReminderChime(theme: ThemeId = 'winter'): Promise<void> {
+export async function playReminderChime(theme: ThemeId = 'light'): Promise<void> {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -55,11 +55,7 @@ export async function playReminderChime(theme: ThemeId = 'winter'): Promise<void
       // Gothic minor bell chord: D5 - F5 - A5 - D6
       notes = [587.33, 698.46, 880.0, 1174.66];
       waveType = 'triangle';
-    } else if (theme === 'spring') {
-      notes = [659.25, 830.61, 987.77, 1318.51]; // E major bright blossom chime
-    } else if (theme === 'summer') {
-      notes = [523.25, 659.25, 783.99, 1046.5]; // C major bright chime
-    } else if (theme === 'autumn') {
+    } else if (theme === 'dark') {
       notes = [440.0, 554.37, 659.25, 880.0]; // Warm A major chime
     }
 

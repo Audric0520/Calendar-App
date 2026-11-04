@@ -29,123 +29,65 @@
    with zero style leaking from parent containers.
    ============================================================================ */
 
-/* 1. SPRING — Soft pastel greens, sakura pink accents, light floral borders */
-[data-theme='spring'] {
+/* 1. LIGHT MODE — Crisp daylight white surfaces, slate borders, cobalt blue accents */
+[data-theme='light'] {
   --t-is-dark: 0;
-  --t-bg-primary: #f2fbf4;
+  --t-bg-primary: #f8fafc;
   --t-bg-surface: #ffffff;
-  --t-bg-elevated: #fff9fc;
-  --t-bg-cell: #f9fefb;
-  --t-bg-cell-muted: #ebf5ee;
-  --t-bg-cell-hover: #fdf2f8;
-  --t-bg-today: #fce7f3;
-  --t-border: #f3bfd4;
-  --t-border-strong: #ec4899;
-  --t-text-primary: #173322;
-  --t-text-secondary: #3b5c47;
-  --t-text-muted: #6c8d77;
-  --t-accent: #db2777;
-  --t-accent-hover: #be185d;
-  --t-accent-soft: #fce7f3;
-  --t-accent-contrast: #ffffff;
-  --t-accent-2: #4ade80;
-  --t-accent-3: #f472b6;
-  --t-shadow: 0 4px 16px -4px rgba(219, 39, 119, 0.12);
-  --t-shadow-lg: 0 18px 40px -10px rgba(23, 51, 34, 0.16);
-  --t-header-gradient: linear-gradient(135deg, #f0fdf4 0%, #fdf2f8 60%, #dcfce7 100%);
-  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(244, 114, 182, 0.08), transparent 55%);
-  --t-font-display: inherit;
-  color-scheme: light;
-}
-
-/* 2. SUMMER — Oceanic blues, vibrant golden yellows, high-contrast bright grid lines */
-[data-theme='summer'] {
-  --t-is-dark: 0;
-  --t-bg-primary: #e0f2fe;
-  --t-bg-surface: #f7fcff;
-  --t-bg-elevated: #ffffff;
-  --t-bg-cell: #f2faff;
-  --t-bg-cell-muted: #dff1fd;
-  --t-bg-cell-hover: #fef9c3;
-  --t-bg-today: #fef08a;
-  --t-border: #38bdf8;
-  --t-border-strong: #0284c7;
-  --t-text-primary: #082f49;
-  --t-text-secondary: #0369a1;
-  --t-text-muted: #0284c7;
-  --t-accent: #0284c7;
-  --t-accent-hover: #0369a1;
-  --t-accent-soft: #fef08a;
-  --t-accent-contrast: #ffffff;
-  --t-accent-2: #eab308;
-  --t-accent-3: #06b6d4;
-  --t-shadow: 0 4px 16px -4px rgba(2, 132, 199, 0.18);
-  --t-shadow-lg: 0 18px 40px -10px rgba(8, 47, 73, 0.2);
-  --t-header-gradient: linear-gradient(135deg, #e0f2fe 0%, #fef9c3 55%, #bae6fd 100%);
-  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(250, 204, 21, 0.12), transparent 55%);
-  --t-font-display: inherit;
-  color-scheme: light;
-}
-
-/* 3. AUTUMN — Terracotta orange, warm amber, burnt oak tones */
-[data-theme='autumn'] {
-  --t-is-dark: 0;
-  --t-bg-primary: #fbf1e3;
-  --t-bg-surface: #fffaf3;
-  --t-bg-elevated: #ffffff;
-  --t-bg-cell: #fffaf4;
-  --t-bg-cell-muted: #f4e4ce;
-  --t-bg-cell-hover: #ffedd5;
-  --t-bg-today: #fed7aa;
-  --t-border: #d99b66;
-  --t-border-strong: #c2410c;
-  --t-text-primary: #3b1706;
-  --t-text-secondary: #6e3212;
-  --t-text-muted: #9a552b;
-  --t-accent: #c2410c;
-  --t-accent-hover: #9a3412;
-  --t-accent-soft: #ffedd5;
-  --t-accent-contrast: #ffffff;
-  --t-accent-2: #d97706;
-  --t-accent-3: #78350f;
-  --t-shadow: 0 4px 16px -4px rgba(194, 65, 12, 0.15);
-  --t-shadow-lg: 0 18px 40px -10px rgba(67, 20, 7, 0.2);
-  --t-header-gradient: linear-gradient(135deg, #ffedd5 0%, #fef3c7 55%, #fed7aa 100%);
-  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(217, 119, 6, 0.1), transparent 55%);
-  --t-font-display: inherit;
-  color-scheme: light;
-}
-
-/* 4. WINTER — Frost white, icy teal, muted slate silver highlights */
-[data-theme='winter'] {
-  --t-is-dark: 0;
-  --t-bg-primary: #eef4f8;
-  --t-bg-surface: #ffffff;
-  --t-bg-elevated: #f8fafc;
+  --t-bg-elevated: #f1f5f9;
   --t-bg-cell: #ffffff;
-  --t-bg-cell-muted: #f1f5f9;
-  --t-bg-cell-hover: #f0fdfa;
-  --t-bg-today: #ccfbf1;
-  --t-border: #cbd5e1;
-  --t-border-strong: #0d9488;
+  --t-bg-cell-muted: #f8fafc;
+  --t-bg-cell-hover: #eff6ff;
+  --t-bg-today: #dbeafe;
+  --t-border: #e2e8f0;
+  --t-border-strong: #2563eb;
   --t-text-primary: #0f172a;
   --t-text-secondary: #475569;
   --t-text-muted: #64748b;
-  --t-accent: #0d9488;
-  --t-accent-hover: #0f766e;
-  --t-accent-soft: #ccfbf1;
+  --t-accent: #2563eb;
+  --t-accent-hover: #1d4ed8;
+  --t-accent-soft: #dbeafe;
   --t-accent-contrast: #ffffff;
-  --t-accent-2: #94a3b8;
-  --t-accent-3: #38bdf8;
+  --t-accent-2: #3b82f6;
+  --t-accent-3: #64748b;
   --t-shadow: 0 4px 16px -4px rgba(15, 23, 42, 0.08);
   --t-shadow-lg: 0 18px 40px -10px rgba(15, 23, 42, 0.16);
-  --t-header-gradient: linear-gradient(135deg, #f8fafc 0%, #f0fdfa 55%, #e2e8f0 100%);
-  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.08), transparent 55%);
+  --t-header-gradient: linear-gradient(135deg, #ffffff 0%, #f8fafc 55%, #eff6ff 100%);
+  --t-cell-overlay: none;
   --t-font-display: inherit;
   color-scheme: light;
 }
 
-/* 5. KAMEN RIDER OOO — Metallic dark chrome, Tatoba (Red/Yellow/Green) Core Medal accents */
+/* 2. DARK MODE — Sleek midnight slate surfaces, soft sky-blue accents */
+[data-theme='dark'] {
+  --t-is-dark: 1;
+  --t-bg-primary: #0b0f19;
+  --t-bg-surface: #131926;
+  --t-bg-elevated: #1e2638;
+  --t-bg-cell: #111723;
+  --t-bg-cell-muted: #0c101a;
+  --t-bg-cell-hover: #1b2436;
+  --t-bg-today: #172554;
+  --t-border: #283246;
+  --t-border-strong: #60a5fa;
+  --t-text-primary: #f1f5f9;
+  --t-text-secondary: #94a3b8;
+  --t-text-muted: #64748b;
+  --t-accent: #60a5fa;
+  --t-accent-hover: #3b82f6;
+  --t-accent-soft: rgba(96, 165, 250, 0.18);
+  --t-accent-contrast: #0b1120;
+  --t-accent-2: #38bdf8;
+  --t-accent-3: #818cf8;
+  --t-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.5);
+  --t-shadow-lg: 0 22px 48px -10px rgba(0, 0, 0, 0.7);
+  --t-header-gradient: linear-gradient(135deg, #131926 0%, #1a2336 55%, #111827 100%);
+  --t-cell-overlay: none;
+  --t-font-display: inherit;
+  color-scheme: dark;
+}
+
+/* 3. KAMEN RIDER OOO — Metallic dark chrome, Tatoba (Red/Yellow/Green) Core Medal accents */
 [data-theme='ooo'] {
   --t-is-dark: 1;
   --t-bg-primary: #0f1217;
@@ -255,27 +197,14 @@
   background-color: var(--t-bg-today);
 }
 
-/* Spring Week Signature: Delicate sakura floral left accent & soft petal border */
-.week-row-scope[data-theme='spring'] {
-  box-shadow: inset 3px 0 0 0 #f472b6, inset 6px 0 0 0 #86efac;
+/* Light Mode Week Signature: Crisp cobalt blue & neutral slate highlight */
+.week-row-scope[data-theme='light'] {
+  box-shadow: inset 3px 0 0 0 #2563eb, inset 6px 0 0 0 #cbd5e1;
 }
 
-/* Summer Week Signature: High-contrast bright oceanic + golden sun bar */
-.week-row-scope[data-theme='summer'] {
-  box-shadow: inset 3px 0 0 0 #0284c7, inset 6px 0 0 0 #facc15;
-}
-.week-row-scope[data-theme='summer'] > .week-cells-grid > .calendar-day-cell {
-  border-width: 0 1px 1.5px 0;
-}
-
-/* Autumn Week Signature: Terracotta & warm amber harvest trim */
-.week-row-scope[data-theme='autumn'] {
-  box-shadow: inset 3px 0 0 0 #c2410c, inset 6px 0 0 0 #f59e0b;
-}
-
-/* Winter Week Signature: Crystalline icy teal & frost silver highlight */
-.week-row-scope[data-theme='winter'] {
-  box-shadow: inset 3px 0 0 0 #0d9488, inset 6px 0 0 0 #cbd5e1;
+/* Dark Mode Week Signature: Soft sky-blue & dark slate highlight */
+.week-row-scope[data-theme='dark'] {
+  box-shadow: inset 3px 0 0 0 #60a5fa, inset 6px 0 0 0 #334155;
 }
 
 /* Kamen Rider OOO Week Signature: Tatoba Tri-Color Medal Bar + Dark Chrome Bevel */
