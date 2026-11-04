@@ -1,0 +1,370 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+}
+
+/* ============================================================================
+   DYNAMIC SCOPED THEME ENGINE
+   Each [data-theme="..."] scope redefines EVERY token completely so nested
+   per-week scopes inside Month View render distinct themes simultaneously
+   with zero style leaking from parent containers.
+   ============================================================================ */
+
+/* 1. SPRING — Soft pastel greens, sakura pink accents, light floral borders */
+[data-theme='spring'] {
+  --t-is-dark: 0;
+  --t-bg-primary: #f2fbf4;
+  --t-bg-surface: #ffffff;
+  --t-bg-elevated: #fff9fc;
+  --t-bg-cell: #f9fefb;
+  --t-bg-cell-muted: #ebf5ee;
+  --t-bg-cell-hover: #fdf2f8;
+  --t-bg-today: #fce7f3;
+  --t-border: #f3bfd4;
+  --t-border-strong: #ec4899;
+  --t-text-primary: #173322;
+  --t-text-secondary: #3b5c47;
+  --t-text-muted: #6c8d77;
+  --t-accent: #db2777;
+  --t-accent-hover: #be185d;
+  --t-accent-soft: #fce7f3;
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #4ade80;
+  --t-accent-3: #f472b6;
+  --t-shadow: 0 4px 16px -4px rgba(219, 39, 119, 0.12);
+  --t-shadow-lg: 0 18px 40px -10px rgba(23, 51, 34, 0.16);
+  --t-header-gradient: linear-gradient(135deg, #f0fdf4 0%, #fdf2f8 60%, #dcfce7 100%);
+  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(244, 114, 182, 0.08), transparent 55%);
+  --t-font-display: inherit;
+  color-scheme: light;
+}
+
+/* 2. SUMMER — Oceanic blues, vibrant golden yellows, high-contrast bright grid lines */
+[data-theme='summer'] {
+  --t-is-dark: 0;
+  --t-bg-primary: #e0f2fe;
+  --t-bg-surface: #f7fcff;
+  --t-bg-elevated: #ffffff;
+  --t-bg-cell: #f2faff;
+  --t-bg-cell-muted: #dff1fd;
+  --t-bg-cell-hover: #fef9c3;
+  --t-bg-today: #fef08a;
+  --t-border: #38bdf8;
+  --t-border-strong: #0284c7;
+  --t-text-primary: #082f49;
+  --t-text-secondary: #0369a1;
+  --t-text-muted: #0284c7;
+  --t-accent: #0284c7;
+  --t-accent-hover: #0369a1;
+  --t-accent-soft: #fef08a;
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #eab308;
+  --t-accent-3: #06b6d4;
+  --t-shadow: 0 4px 16px -4px rgba(2, 132, 199, 0.18);
+  --t-shadow-lg: 0 18px 40px -10px rgba(8, 47, 73, 0.2);
+  --t-header-gradient: linear-gradient(135deg, #e0f2fe 0%, #fef9c3 55%, #bae6fd 100%);
+  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(250, 204, 21, 0.12), transparent 55%);
+  --t-font-display: inherit;
+  color-scheme: light;
+}
+
+/* 3. AUTUMN — Terracotta orange, warm amber, burnt oak tones */
+[data-theme='autumn'] {
+  --t-is-dark: 0;
+  --t-bg-primary: #fbf1e3;
+  --t-bg-surface: #fffaf3;
+  --t-bg-elevated: #ffffff;
+  --t-bg-cell: #fffaf4;
+  --t-bg-cell-muted: #f4e4ce;
+  --t-bg-cell-hover: #ffedd5;
+  --t-bg-today: #fed7aa;
+  --t-border: #d99b66;
+  --t-border-strong: #c2410c;
+  --t-text-primary: #3b1706;
+  --t-text-secondary: #6e3212;
+  --t-text-muted: #9a552b;
+  --t-accent: #c2410c;
+  --t-accent-hover: #9a3412;
+  --t-accent-soft: #ffedd5;
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #d97706;
+  --t-accent-3: #78350f;
+  --t-shadow: 0 4px 16px -4px rgba(194, 65, 12, 0.15);
+  --t-shadow-lg: 0 18px 40px -10px rgba(67, 20, 7, 0.2);
+  --t-header-gradient: linear-gradient(135deg, #ffedd5 0%, #fef3c7 55%, #fed7aa 100%);
+  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(217, 119, 6, 0.1), transparent 55%);
+  --t-font-display: inherit;
+  color-scheme: light;
+}
+
+/* 4. WINTER — Frost white, icy teal, muted slate silver highlights */
+[data-theme='winter'] {
+  --t-is-dark: 0;
+  --t-bg-primary: #eef4f8;
+  --t-bg-surface: #ffffff;
+  --t-bg-elevated: #f8fafc;
+  --t-bg-cell: #ffffff;
+  --t-bg-cell-muted: #f1f5f9;
+  --t-bg-cell-hover: #f0fdfa;
+  --t-bg-today: #ccfbf1;
+  --t-border: #cbd5e1;
+  --t-border-strong: #0d9488;
+  --t-text-primary: #0f172a;
+  --t-text-secondary: #475569;
+  --t-text-muted: #64748b;
+  --t-accent: #0d9488;
+  --t-accent-hover: #0f766e;
+  --t-accent-soft: #ccfbf1;
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #94a3b8;
+  --t-accent-3: #38bdf8;
+  --t-shadow: 0 4px 16px -4px rgba(15, 23, 42, 0.08);
+  --t-shadow-lg: 0 18px 40px -10px rgba(15, 23, 42, 0.16);
+  --t-header-gradient: linear-gradient(135deg, #f8fafc 0%, #f0fdfa 55%, #e2e8f0 100%);
+  --t-cell-overlay: radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.08), transparent 55%);
+  --t-font-display: inherit;
+  color-scheme: light;
+}
+
+/* 5. KAMEN RIDER OOO — Metallic dark chrome, Tatoba (Red/Yellow/Green) Core Medal accents */
+[data-theme='ooo'] {
+  --t-is-dark: 1;
+  --t-bg-primary: #0f1217;
+  --t-bg-surface: #171c24;
+  --t-bg-elevated: #202733;
+  --t-bg-cell: #151a22;
+  --t-bg-cell-muted: #10141b;
+  --t-bg-cell-hover: #212836;
+  --t-bg-today: #282214;
+  --t-border: #3b4559;
+  --t-border-strong: #facc15;
+  --t-text-primary: #f1f5f9;
+  --t-text-secondary: #cbd5e1;
+  --t-text-muted: #8a99b0;
+  --t-accent: #ef4444;
+  --t-accent-hover: #dc2626;
+  --t-accent-soft: rgba(250, 204, 21, 0.16);
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #facc15;
+  --t-accent-3: #22c55e;
+  --t-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.55);
+  --t-shadow-lg: 0 22px 48px -10px rgba(0, 0, 0, 0.72);
+  --t-header-gradient: linear-gradient(
+    135deg,
+    #1c222d 0%,
+    #252d3b 45%,
+    #161b23 100%
+  );
+  --t-cell-overlay: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.035) 0%,
+    transparent 45%,
+    rgba(250, 204, 21, 0.03) 100%
+  );
+  --t-font-display: inherit;
+  color-scheme: dark;
+}
+
+/* 6. WEDNESDAY (Addams / Nevermore) — Gothic monochromatic dark, violet/burgundy, stained glass */
+[data-theme='wednesday'] {
+  --t-is-dark: 1;
+  --t-bg-primary: #08080d;
+  --t-bg-surface: #111019;
+  --t-bg-elevated: #1a1827;
+  --t-bg-cell: #0d0c14;
+  --t-bg-cell-muted: #08070d;
+  --t-bg-cell-hover: #1b172b;
+  --t-bg-today: #241634;
+  --t-border: #2e2942;
+  --t-border-strong: #7c3aed;
+  --t-text-primary: #ede9fe;
+  --t-text-secondary: #b4add0;
+  --t-text-muted: #756e94;
+  --t-accent: #7c3aed;
+  --t-accent-hover: #6d28d9;
+  --t-accent-soft: rgba(124, 58, 237, 0.22);
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #9f1239;
+  --t-accent-3: #4c1d95;
+  --t-shadow: 0 6px 22px -4px rgba(0, 0, 0, 0.65);
+  --t-shadow-lg: 0 22px 50px -10px rgba(0, 0, 0, 0.82);
+  --t-header-gradient: linear-gradient(
+    135deg,
+    #12101c 0%,
+    #1d152c 50%,
+    #1b0e18 100%
+  );
+  --t-cell-overlay: radial-gradient(
+    circle at 50% 0%,
+    rgba(124, 58, 237, 0.08),
+    rgba(159, 18, 57, 0.04) 55%,
+    transparent 80%
+  );
+  --t-font-display: Georgia, 'Times New Roman', serif;
+  color-scheme: dark;
+}
+
+/* ============================================================================
+   SCOPED PER-WEEK ROW FRAMING & THEMATIC SIGNATURES
+   Strictly scoped to `.week-row-scope[data-theme="..."]` (siblings, never nested)
+   so each week row in Month View renders its signature aesthetic cleanly.
+   ============================================================================ */
+
+.week-row-scope {
+  position: relative;
+  background-color: var(--t-bg-cell);
+  color: var(--t-text-primary);
+  transition: background-color 220ms ease, border-color 220ms ease;
+}
+
+.week-row-scope > .week-cells-grid > .calendar-day-cell {
+  background-color: var(--t-bg-cell);
+  background-image: var(--t-cell-overlay);
+  border-color: var(--t-border);
+  color: var(--t-text-primary);
+}
+
+.week-row-scope > .week-cells-grid > .calendar-day-cell.is-outside-month {
+  background-color: var(--t-bg-cell-muted);
+}
+
+.week-row-scope > .week-cells-grid > .calendar-day-cell:hover {
+  background-color: var(--t-bg-cell-hover);
+}
+
+.week-row-scope > .week-cells-grid > .calendar-day-cell.is-today-cell {
+  background-color: var(--t-bg-today);
+}
+
+/* Spring Week Signature: Delicate sakura floral left accent & soft petal border */
+.week-row-scope[data-theme='spring'] {
+  box-shadow: inset 3px 0 0 0 #f472b6, inset 6px 0 0 0 #86efac;
+}
+
+/* Summer Week Signature: High-contrast bright oceanic + golden sun bar */
+.week-row-scope[data-theme='summer'] {
+  box-shadow: inset 3px 0 0 0 #0284c7, inset 6px 0 0 0 #facc15;
+}
+.week-row-scope[data-theme='summer'] > .week-cells-grid > .calendar-day-cell {
+  border-width: 0 1px 1.5px 0;
+}
+
+/* Autumn Week Signature: Terracotta & warm amber harvest trim */
+.week-row-scope[data-theme='autumn'] {
+  box-shadow: inset 3px 0 0 0 #c2410c, inset 6px 0 0 0 #f59e0b;
+}
+
+/* Winter Week Signature: Crystalline icy teal & frost silver highlight */
+.week-row-scope[data-theme='winter'] {
+  box-shadow: inset 3px 0 0 0 #0d9488, inset 6px 0 0 0 #cbd5e1;
+}
+
+/* Kamen Rider OOO Week Signature: Tatoba Tri-Color Medal Bar + Dark Chrome Bevel */
+.week-row-scope[data-theme='ooo'] {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.6);
+}
+.week-row-scope[data-theme='ooo']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    #ef4444 0%,
+    #ef4444 33.3%,
+    #facc15 33.3%,
+    #facc15 66.6%,
+    #22c55e 66.6%,
+    #22c55e 100%
+  );
+}
+
+/* Wednesday Week Signature: Stained-glass leaded gothic arch & violet/burgundy trim */
+.week-row-scope[data-theme='wednesday'] {
+  box-shadow: inset 0 1px 0 0 rgba(124, 58, 237, 0.28),
+    inset 0 -1px 0 0 rgba(159, 18, 57, 0.28);
+}
+.week-row-scope[data-theme='wednesday']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(to bottom, #7c3aed 0%, #18181b 50%, #9f1239 100%);
+}
+.week-row-scope[data-theme='wednesday'] > .week-cells-grid > .calendar-day-cell {
+  background-image: radial-gradient(
+      circle at 50% 0%,
+      rgba(124, 58, 237, 0.09),
+      transparent 65%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.02) 0%,
+      transparent 35%,
+      rgba(159, 18, 57, 0.04) 100%
+    );
+}
+
+/* Custom themed scrollbars */
+.themed-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.themed-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.themed-scroll::-webkit-scrollbar-thumb {
+  background: var(--t-border);
+  border-radius: 9999px;
+}
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--t-border-strong);
+}
+
+/* Tabular numbers for crisp calendar alignment */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes toastSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-toast-in {
+  animation: toastSlideIn 280ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
