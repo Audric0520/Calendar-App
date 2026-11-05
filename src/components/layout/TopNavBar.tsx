@@ -149,7 +149,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
               <CalendarIcon className="w-4 h-4" />
             </div>
             <span className="font-extrabold text-sm md:text-base tracking-tight text-theme-text">
-              ChronoPalette
+              OmniCal
             </span>
           </div>
 
