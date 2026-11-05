@@ -1,12 +1,18 @@
 import {
   CalendarEvent,
+  CategoryScope,
   CategoryTag,
   EventCategory,
   NotificationSettings,
   ThemeId,
   ThemePreferences,
 } from '../types/calendar';
-import { DEFAULT_CATEGORY_TAGS } from '../constants/categories';
+import {
+  DEFAULT_CATEGORY_TAGS,
+  EVENT_CATEGORY_TAGS,
+  TASK_CATEGORY_TAGS,
+  resolveTagScope,
+} from '../constants/categories';
 
 const LEGACY_DB_NAME = 'ChronoPaletteCalendarDB';
 const DB_NAME = 'ChronoPaletteEventsDB';
@@ -19,8 +25,10 @@ const LS_KEYS = {
   THEME_PREFS: 'chronopalette_theme_prefs_v1',
   NOTIFICATION_SETTINGS: 'chronopalette_notification_settings_v1',
   FIRED_REMINDERS: 'chronopalette_fired_reminders_v2',
-  CUSTOM_CATEGORIES: 'chronopalette_custom_categories_v1',
-  VISIBLE_CATEGORIES: 'chronopalette_visible_categories_v2',
+  CUSTOM_CATEGORIES: 'chronopalette_custom_categories_v2',
+  VISIBLE_CATEGORIES: 'chronopalette_visible_categories_v3',
+  /** Which item types are rendered on the calendar (events / tasks). */
+  VISIBLE_SCOPES: 'chronopalette_visible_scopes_v3',
 };
 
 const VALID_THEMES = new Set<ThemeId>(['light', 'dark', 'ooo', 'wednesday']);
@@ -59,17 +67,24 @@ function ensureCleanBrandNewSlate(): void {
   }
 }
 
+/**
+ * Keeps every item on a tag that exists *and* belongs to its own item type.
+ * A task that somehow points at an event tag (or a deleted tag) is moved to the
+ * task fallback, and vice versa.
+ */
 function normalizeEventsCategories(
   events: CalendarEvent[],
-  validCategoryIds: Set<string>
+  tags: CategoryTag[]
 ): { normalized: CalendarEvent[]; changed: boolean } {
   let changed = false;
   const normalized = events.map((ev) => {
-    if (validCategoryIds.has(ev.category)) {
+    const scope: CategoryScope = ev.isTask ? 'task' : 'event';
+    const tag = tags.find((t) => t.id === ev.category);
+    if (tag && (tag.scope ?? resolveTagScope(tag.id, tags)) === scope) {
       return ev;
     }
     changed = true;
-    return { ...ev, category: 'class-sched' };
+    return { ...ev, category: scope === 'task' ? 'academic' : 'class-sched' };
   });
   return { normalized, changed };
 }
@@ -107,6 +122,9 @@ export function loadCustomCategories(): CategoryTag[] {
       label: tag.label,
       color: tag.color,
       isCustom: true,
+      // Legacy custom tags (saved before tags were split per item type) are
+      // treated as Event tags.
+      scope: tag.scope === 'task' ? 'task' : 'event',
     }));
   } catch {
     return [];
@@ -126,10 +144,7 @@ export async function loadStoredEvents(
 ): Promise<CalendarEvent[]> {
   ensureCleanBrandNewSlate();
 
-  const validIds = new Set<string>([
-    ...DEFAULT_CATEGORY_TAGS.map((t) => t.id),
-    ...customTags.map((t) => t.id),
-  ]);
+  const knownTags: CategoryTag[] = [...DEFAULT_CATEGORY_TAGS, ...customTags];
 
   try {
     const db = await openDatabase();
@@ -142,7 +157,7 @@ export async function loadStoredEvents(
     });
     db.close();
 
-    const { normalized, changed } = normalizeEventsCategories(events, validIds);
+    const { normalized, changed } = normalizeEventsCategories(events, knownTags);
     if (changed) {
       await saveStoredEvents(normalized);
     }
@@ -154,7 +169,7 @@ export async function loadStoredEvents(
         const parsed = JSON.parse(raw) as CalendarEvent[];
         const { normalized, changed } = normalizeEventsCategories(
           parsed,
-          validIds
+          knownTags
         );
         if (changed) {
           localStorage.setItem(
@@ -289,16 +304,18 @@ export function loadVisibleCategories(
   customTags: CategoryTag[] = []
 ): EventCategory[] {
   const defaultAll = [
-    ...DEFAULT_CATEGORY_TAGS.map((c) => c.id),
+    ...EVENT_CATEGORY_TAGS.map((c) => c.id),
+    ...TASK_CATEGORY_TAGS.map((c) => c.id),
     ...customTags.map((c) => c.id),
   ];
   try {
     const raw = localStorage.getItem(LS_KEYS.VISIBLE_CATEGORIES);
     if (!raw) return defaultAll;
     const saved = JSON.parse(raw) as EventCategory[];
+    if (!Array.isArray(saved)) return defaultAll;
     const validSet = new Set<string>(defaultAll);
-    const filtered = saved.filter((id) => validSet.has(id));
-    return filtered.length > 0 || saved.length === 0 ? filtered : defaultAll;
+    // Unticking every tag is a legitimate state, so no silent re-enable.
+    return saved.filter((id) => validSet.has(id));
   } catch {
     return defaultAll;
   }
@@ -310,6 +327,35 @@ export function saveVisibleCategories(categories: EventCategory[]): void {
       LS_KEYS.VISIBLE_CATEGORIES,
       JSON.stringify(categories)
     );
+  } catch {
+    // Ignore
+  }
+}
+
+const DEFAULT_VISIBLE_SCOPES: CategoryScope[] = ['event', 'task'];
+
+/** Which item types the calendar currently draws (Events and/or Tasks). */
+export function loadVisibleScopes(): CategoryScope[] {
+  try {
+    const raw = localStorage.getItem(LS_KEYS.VISIBLE_SCOPES);
+    if (!raw) return DEFAULT_VISIBLE_SCOPES;
+    const parsed = JSON.parse(raw) as CategoryScope[];
+    if (!Array.isArray(parsed)) return DEFAULT_VISIBLE_SCOPES;
+    // An empty array is a deliberate "hide both" state.
+    if (parsed.length === 0) return [];
+    const filtered = parsed.filter(
+      (s): s is CategoryScope => s === 'event' || s === 'task'
+    );
+    // Nothing usable survived (corrupt payload) -> show both types again.
+    return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_SCOPES;
+  } catch {
+    return DEFAULT_VISIBLE_SCOPES;
+  }
+}
+
+export function saveVisibleScopes(scopes: CategoryScope[]): void {
+  try {
+    localStorage.setItem(LS_KEYS.VISIBLE_SCOPES, JSON.stringify(scopes));
   } catch {
     // Ignore
   }

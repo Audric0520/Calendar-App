@@ -26,7 +26,11 @@ export const ReminderToastStack: React.FC<ReminderToastStackProps> = ({
     >
       <AnimatePresence initial={false}>
       {toasts.map((toast) => {
-        const cat = resolveCategoryMeta(toast.category, categoryMap);
+        const cat = resolveCategoryMeta(
+          toast.category,
+          categoryMap,
+          toast.isTask ? 'task' : 'event'
+        );
         return (
           <motion.div
             key={toast.id}

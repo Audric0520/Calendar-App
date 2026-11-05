@@ -15,7 +15,9 @@ import {
 import { Filter, X } from 'lucide-react';
 import {
   CalendarEvent,
+  CalendarScopeFilter,
   CalendarView,
+  CategoryScope,
   CategoryTag,
   EventCategory,
   EventDraft,
@@ -30,11 +32,13 @@ import {
   loadStoredEvents,
   loadThemePreferences,
   loadVisibleCategories,
+  loadVisibleScopes,
   saveCustomCategories,
   saveNotificationSettings,
   saveStoredEvents,
   saveThemePreferences,
   saveVisibleCategories,
+  saveVisibleScopes,
 } from './services/storage';
 import { unlockAudioOnFirstInteraction } from './services/sound';
 import {
@@ -48,7 +52,9 @@ import {
 } from './utils/themeResolver';
 import {
   buildCategoryMap,
+  getCategoryTagsByScope,
   resolveCategoryMeta,
+  resolveTagScope,
 } from './constants/categories';
 import { useReminderEngine } from './hooks/useReminderEngine';
 import { TopNavBar } from './components/layout/TopNavBar';
@@ -139,6 +145,10 @@ export const App: React.FC = () => {
   const [visibleCategories, setVisibleCategories] = useState<EventCategory[]>(
     () => loadVisibleCategories(loadCustomCategories())
   );
+  /** Which item types the calendar draws at all (Events and/or Tasks). */
+  const [visibleScopes, setVisibleScopes] = useState<CategoryScope[]>(() =>
+    loadVisibleScopes()
+  );
 
   const [themePrefs, setThemePrefs] = useState<ThemePreferences>(() =>
     loadThemePreferences()
@@ -155,14 +165,25 @@ export const App: React.FC = () => {
     useState<EventOccurrence | null>(null);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
 
-  // Build unified category map & ordered list (3 built-in tags + user custom tags)
+  // Build unified category map (event tags + task tags + custom tags)
   const categoryMap = useMemo(
     () => buildCategoryMap(customCategories),
     [customCategories]
   );
-  const categoriesList = useMemo(
-    () => Object.values(categoryMap),
-    [categoryMap]
+  // Tag lists are split per item type: events and tasks never share a palette.
+  const eventCategories = useMemo(
+    () =>
+      getCategoryTagsByScope('event', customCategories).map(
+        (t) => categoryMap[t.id]
+      ),
+    [categoryMap, customCategories]
+  );
+  const taskCategories = useMemo(
+    () =>
+      getCategoryTagsByScope('task', customCategories).map(
+        (t) => categoryMap[t.id]
+      ),
+    [categoryMap, customCategories]
   );
 
   // Load persisted events from IndexedDB on mount
@@ -203,9 +224,13 @@ export const App: React.FC = () => {
     saveVisibleCategories(visibleCategories);
   }, [visibleCategories]);
 
-  // Custom Category CRUD
+  useEffect(() => {
+    saveVisibleScopes(visibleScopes);
+  }, [visibleScopes]);
+
+  // Custom Category CRUD — every custom tag belongs to either Events or Tasks
   const handleAddCustomCategory = useCallback(
-    (label: string, color: string): CategoryTag => {
+    (label: string, color: string, scope: CategoryScope = 'event'): CategoryTag => {
       const slug = label
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
@@ -216,6 +241,7 @@ export const App: React.FC = () => {
         label: label.trim(),
         color,
         isCustom: true,
+        scope,
       };
       setCustomCategories((prev) => [...prev, newTag]);
       setVisibleCategories((prev) =>
@@ -226,16 +252,25 @@ export const App: React.FC = () => {
     []
   );
 
-  const handleDeleteCustomCategory = useCallback((id: string) => {
-    setCustomCategories((prev) => prev.filter((t) => t.id !== id));
-    setVisibleCategories((prev) => prev.filter((c) => c !== id));
-    // Reassign any events using the deleted tag back to Class Sched
-    setEvents((prev) =>
-      prev.map((ev) =>
-        ev.category === id ? { ...ev, category: 'class-sched' } : ev
-      )
-    );
-  }, []);
+  const handleDeleteCustomCategory = useCallback(
+    (id: string) => {
+      const scope = resolveTagScope(id, customCategories);
+      setCustomCategories((prev) => prev.filter((t) => t.id !== id));
+      setVisibleCategories((prev) => prev.filter((c) => c !== id));
+      // Reassign affected items to their own scope's fallback tag
+      setEvents((prev) =>
+        prev.map((ev) =>
+          ev.category === id
+            ? {
+                ...ev,
+                category: scope === 'task' ? 'academic' : 'class-sched',
+              }
+            : ev
+        )
+      );
+    },
+    [customCategories]
+  );
 
   // Resolve shell theme based on current view & date
   const shellResolved = useMemo(
@@ -247,13 +282,15 @@ export const App: React.FC = () => {
     Object.keys(themePrefs.monthThemes).length +
     Object.keys(themePrefs.weekThemes).length;
 
-  // Filter master events by search query & visible categories
+  // Filter master items by item type (event/task), tag visibility & search
   const filteredMasterEvents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return events.filter((ev) => {
+      const scope: CategoryScope = ev.isTask ? 'task' : 'event';
+      if (!visibleScopes.includes(scope)) return false;
       if (!visibleCategories.includes(ev.category)) return false;
       if (!q) return true;
-      const catLabel = resolveCategoryMeta(ev.category, categoryMap).label;
+      const catLabel = resolveCategoryMeta(ev.category, categoryMap, scope).label;
       return (
         ev.title.toLowerCase().includes(q) ||
         ev.description.toLowerCase().includes(q) ||
@@ -261,7 +298,7 @@ export const App: React.FC = () => {
         catLabel.toLowerCase().includes(q)
       );
     });
-  }, [categoryMap, events, searchQuery, visibleCategories]);
+  }, [categoryMap, events, searchQuery, visibleCategories, visibleScopes]);
 
   // Expand occurrences across a generous window around currentDate for main view + mini-calendar
   const expandedOccurrences = useMemo(() => {
@@ -624,6 +661,23 @@ export const App: React.FC = () => {
     );
   }, []);
 
+  /**
+   * Master switch for the Event / Task calendars. Hiding every tag of a type
+   * also clears its tag selections so re-enabling it restores a sensible view.
+   */
+  const handleToggleScope = useCallback((scope: CategoryScope) => {
+    setVisibleScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
+    );
+  }, []);
+
+  /** "Events only" / "Tasks only" / "Both" quick presets. */
+  const handleSetScopeFilter = useCallback((filter: CalendarScopeFilter) => {
+    if (filter === 'both') setVisibleScopes(['event', 'task']);
+    else if (filter === 'events') setVisibleScopes(['event']);
+    else setVisibleScopes(['task']);
+  }, []);
+
   return (
     <div
       ref={appRootRef}
@@ -670,8 +724,10 @@ export const App: React.FC = () => {
           currentDate={currentDate}
           selectedDate={selectedDate}
           occurrences={expandedOccurrences}
-          categories={categoriesList}
+          eventCategories={eventCategories}
+          taskCategories={taskCategories}
           visibleCategories={visibleCategories}
+          visibleScopes={visibleScopes}
           themePrefs={themePrefs}
           onCloseMobileDrawer={() => setMobileDrawerOpen(false)}
           onCreateEvent={() => {
@@ -684,6 +740,8 @@ export const App: React.FC = () => {
             setCurrentDate(date);
           }}
           onToggleCategory={handleToggleCategory}
+          onToggleScope={handleToggleScope}
+          onSetScopeFilter={handleSetScopeFilter}
           onAddCustomCategory={handleAddCustomCategory}
           onDeleteCustomCategory={handleDeleteCustomCategory}
           onSetGlobalTheme={handleSetGlobalTheme}
@@ -819,7 +877,8 @@ export const App: React.FC = () => {
       <EventFormModal
         isOpen={formModalOpen}
         initialDraft={activeDraft}
-        categories={categoriesList}
+        eventCategories={eventCategories}
+        taskCategories={taskCategories}
         onAddCustomCategory={handleAddCustomCategory}
         onDeleteCustomCategory={handleDeleteCustomCategory}
         onClose={() => setFormModalOpen(false)}

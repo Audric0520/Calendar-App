@@ -77,7 +77,11 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   if (!activeOccurrence) return null;
 
   const { event, start, end } = activeOccurrence;
-  const cat = resolveCategoryMeta(event.category, categoryMap);
+  const cat = resolveCategoryMeta(
+    event.category,
+    categoryMap,
+    event.isTask ? 'task' : 'event'
+  );
   const hasImage = Boolean(event.imageUrl && !imgError);
 
   return (

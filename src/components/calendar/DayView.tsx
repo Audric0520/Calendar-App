@@ -313,7 +313,11 @@ export const DayView: React.FC<DayViewProps> = ({
             </div>
           ) : (
             dayOccurrences.map((occ) => {
-              const cat = resolveCategoryMeta(occ.event.category, categoryMap);
+              const cat = resolveCategoryMeta(
+                occ.event.category,
+                categoryMap,
+                occ.event.isTask ? 'task' : 'event'
+              );
               return (
                 <div
                   key={`agenda-${occ.occurrenceId}`}

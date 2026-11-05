@@ -113,7 +113,11 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
     return expanded
       .filter((occ) => {
         const ev = occ.event;
-        const catLabel = resolveCategoryMeta(ev.category, categoryMap).label;
+        const catLabel = resolveCategoryMeta(
+          ev.category,
+          categoryMap,
+          ev.isTask ? 'task' : 'event'
+        ).label;
         return (
           ev.title.toLowerCase().includes(q) ||
           ev.description.toLowerCase().includes(q) ||
@@ -260,7 +264,8 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
                     {searchDropdownResults.map((occ) => {
                       const cat = resolveCategoryMeta(
                         occ.event.category,
-                        categoryMap
+                        categoryMap,
+                        occ.event.isTask ? 'task' : 'event'
                       );
                       return (
                         <button
