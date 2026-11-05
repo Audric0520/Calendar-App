@@ -29,7 +29,18 @@ Scoped CSS Custom Properties (`[data-theme="..."]`) allow **Global**, **Per-Mont
 - Attach `PNG`, `JPG`, or `WebP` images via drag-and-drop / file picker (`FileReader` + smart canvas optimization) or paste an external image URL.
 - Renders thumbnail previews directly inside calendar grid event cards and full-resolution previews (with fullscreen lightbox zoom) in the Event Detail modal.
 
-### 4. Automated 10-Minute Pre-Event Reminders
+### 4. Motion & Micro-Interactions
+All animation is compositor-only (`transform` + `opacity` via **Framer Motion**) to hold a steady 60fps:
+- **Directional navigation:** `Next` slides the grid out to the left while the incoming grid enters from the right; `Previous` mirrors it. Jumping with **Today** cross-fades instead and replays a soft scale pulse on the destination date cell.
+- **View switching:** `Month ↔ Week ↔ Day` cross-fades with a subtle 0.98 → 1.0 scale inside a fixed-size stage, so no layout shift occurs while the view recalculates.
+- **Palette morphing:** theme swaps cross-fade through a snapshot overlay (CSS variables are not interpolable), and every `[data-theme]` surface also gets a soft `background-color / color / border-color` transition.
+- **Theme badges:** per-week theme labels morph + glow in when their palette changes.
+- **Modals & overlays:** elastic spring open (95% → 100%) with a glassmorphism backdrop fading in; 150–200ms fade + scale-down on dismiss.
+- **Sidebar:** spring-eased collapse and slide-in mobile drawer.
+- **Event cards & images:** 2px hover lift with deeper shadow, `scale(0.97)` press feedback, and shimmering skeletons that fade into image attachments once decoded.
+- **Accessibility:** a `prefers-reduced-motion` media query plus Framer Motion's `reducedMotion="user"` keep the UI static (opacity-only) for users who ask for less motion.
+
+### 5. Automated 10-Minute Pre-Event Reminders
 - Requests browser `Notification` permission on first visit.
 - Precision 1-second timer engine triggers both a synthesized Web Audio harmonic chime and a native desktop notification **10 minutes** before event start, falling back automatically to an animated in-app toast alert when browser notifications are denied or restricted.
 

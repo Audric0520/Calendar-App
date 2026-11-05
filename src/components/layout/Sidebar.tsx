@@ -34,6 +34,12 @@ import {
 } from '../../constants/categories';
 import { THEME_LIST } from '../../constants/themes';
 import { ThemeOrnament } from '../calendar/ThemeOrnament';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  SPRING_SOFT,
+  drawerBackdropVariants,
+  drawerPanelVariants,
+} from '../../motion/presets';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -475,27 +481,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Desktop Collapsible Sidebar */}
-      <aside
-        className={`hidden lg:block shrink-0 border-r border-theme-border transition-all duration-300 overflow-hidden ${
-          isOpen ? 'w-72' : 'w-0 border-r-0'
-        }`}
+      {/* Desktop Collapsible Sidebar — spring-eased width with a transform-only
+          inner track so the content glides instead of reflowing */}
+      <motion.aside
+        initial={false}
+        animate={{ width: isOpen ? 288 : 0 }}
+        transition={SPRING_SOFT}
+        className="hidden lg:block shrink-0 overflow-hidden border-r border-theme-border gpu-layer"
       >
-        <div className="w-72 h-full">{sidebarContent}</div>
-      </aside>
+        <motion.div
+          initial={false}
+          animate={{ x: isOpen ? 0 : -24, opacity: isOpen ? 1 : 0 }}
+          transition={SPRING_SOFT}
+          className="w-72 h-full"
+        >
+          {sidebarContent}
+        </motion.div>
+      </motion.aside>
 
       {/* Mobile / Tablet Responsive Drawer */}
-      {isMobileDrawerOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          <div
-            className="fixed inset-0 bg-black/55 backdrop-blur-sm"
-            onClick={onCloseMobileDrawer}
-          />
-          <aside className="relative z-10 w-72 max-w-[86vw] h-full border-r border-theme-border shadow-2xl">
-            {sidebarContent}
-          </aside>
-        </div>
-      )}
+      <AnimatePresence>
+        {isMobileDrawerOpen && (
+          <motion.div
+            key="mobile-drawer"
+            className="fixed inset-0 z-50 lg:hidden flex"
+            initial="enter"
+            animate="center"
+            exit="exit"
+          >
+            <motion.div
+              variants={drawerBackdropVariants}
+              className="fixed inset-0 bg-black/55 backdrop-blur-md"
+              onClick={onCloseMobileDrawer}
+            />
+            <motion.aside
+              variants={drawerPanelVariants}
+              className="relative z-10 w-72 max-w-[86vw] h-full border-r border-theme-border shadow-2xl gpu-layer"
+            >
+              {sidebarContent}
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 };

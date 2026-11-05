@@ -25,6 +25,8 @@ import {
   UpcomingReminderItem,
 } from '../../hooks/useReminderEngine';
 import { ReminderCenterPopover } from '../notifications/ReminderCenterPopover';
+import { AnimatePresence, motion } from 'framer-motion';
+import { menuVariants } from '../../motion/presets';
 import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
 
 interface TopNavBarProps {
@@ -155,41 +157,57 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
 
           {/* Today + Prev / Next */}
           <div className="flex items-center gap-1 sm:gap-1.5">
-            <button
+            <motion.button
               type="button"
               onClick={onJumpToday}
+              whileTap={{ scale: 0.95 }}
+              whileHover={{ y: -1 }}
+              transition={{ type: 'spring', stiffness: 620, damping: 26 }}
               className="rounded-xl border border-theme-border bg-theme-elevated px-3 py-1.5 text-xs font-bold text-theme-text hover:bg-theme-cell-hover transition-colors shadow-sm"
             >
               Today
-            </button>
+            </motion.button>
 
             <div className="inline-flex items-center rounded-xl border border-theme-border bg-theme-elevated p-0.5">
-              <button
+              <motion.button
                 type="button"
                 onClick={onNavigatePrev}
+                whileTap={{ scale: 0.9, x: 1 }}
+                transition={{ type: 'spring', stiffness: 620, damping: 24 }}
                 className="p-1.5 rounded-lg text-theme-text-secondary hover:bg-theme-cell-hover hover:text-theme-text transition-colors"
                 aria-label="Previous period"
               >
                 <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
+              </motion.button>
+              <motion.button
                 type="button"
                 onClick={onNavigateNext}
+                whileTap={{ scale: 0.9, x: -1 }}
+                transition={{ type: 'spring', stiffness: 620, damping: 24 }}
                 className="p-1.5 rounded-lg text-theme-text-secondary hover:bg-theme-cell-hover hover:text-theme-text transition-colors"
                 aria-label="Next period"
               >
                 <ChevronRight className="w-4 h-4" />
-              </button>
+              </motion.button>
             </div>
           </div>
 
-          {/* Current Month / Week / Day Heading */}
-          <h1
-            style={{ fontFamily: 'var(--t-font-display)' }}
-            className="text-sm sm:text-lg font-extrabold text-theme-text truncate tabular-nums"
-          >
-            {headerDateLabel}
-          </h1>
+          {/* Current Month / Week / Day Heading — subtle cross-fade on change */}
+          <div className="relative min-w-0 flex-1">
+            <AnimatePresence initial={false} mode="wait">
+              <motion.h1
+                key={headerDateLabel}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.16, ease: [0.33, 1, 0.68, 1] }}
+                style={{ fontFamily: 'var(--t-font-display)' }}
+                className="text-sm sm:text-lg font-extrabold text-theme-text truncate tabular-nums"
+              >
+                {headerDateLabel}
+              </motion.h1>
+            </AnimatePresence>
+          </div>
         </div>
 
         {/* Right: Search + View Switcher + Theme Studio + Reminders */}
@@ -219,8 +237,17 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             )}
 
             {/* Instant Search Results Popover */}
+            <AnimatePresence>
             {searchFocused && searchQuery.trim().length > 0 && (
-              <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 w-72 sm:w-80 rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg z-40 overflow-hidden">
+              <motion.div
+                key="search-results"
+                variants={menuVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                style={{ transformOrigin: 'top right' }}
+                className="absolute left-0 sm:left-auto sm:right-0 top-full mt-2 w-72 sm:w-80 rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg z-40 overflow-hidden gpu-layer"
+              >
                 <div className="px-3 py-2 border-b border-theme-border bg-theme-elevated text-[11px] font-bold text-theme-text-secondary">
                   Matching Events ({searchDropdownResults.length})
                 </div>
@@ -263,8 +290,9 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
                     })}
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
 
           {/* Month / Week / Day View Switcher */}
@@ -282,35 +310,68 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
                   role="tab"
                   aria-selected={active}
                   onClick={() => onChangeView(v)}
-                  style={
+                  className={`relative px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-colors ${
                     active
-                      ? {
-                          backgroundColor: 'var(--t-accent)',
-                          color: 'var(--t-accent-contrast)',
-                        }
-                      : undefined
-                  }
-                  className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${
-                    active
-                      ? 'shadow-sm'
+                      ? 'text-[var(--t-accent-contrast)]'
                       : 'text-theme-text-secondary hover:text-theme-text'
                   }`}
                 >
-                  {v}
+                  {active && (
+                    <motion.span
+                      layoutId="view-switcher-pill"
+                      aria-hidden="true"
+                      className="absolute inset-0 rounded-lg shadow-sm"
+                      style={{ backgroundColor: 'var(--t-accent)' }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 480,
+                        damping: 34,
+                        mass: 0.7,
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">{v}</span>
                 </button>
               );
             })}
           </div>
 
           {/* Theme Studio Button */}
-          <button
+          <motion.button
             type="button"
             onClick={onOpenThemeStudio}
+            whileTap={{ scale: 0.96 }}
+            whileHover={{ y: -1 }}
+            transition={{ type: 'spring', stiffness: 520, damping: 26 }}
             className="inline-flex items-center gap-1.5 rounded-xl border border-theme-border bg-theme-elevated hover:bg-theme-cell-hover px-2.5 sm:px-3 py-1.5 text-xs font-bold text-theme-text transition-colors relative"
             title={`Active Theme: ${themeMeta.name} (${activeThemeSource})`}
           >
-            <ThemeOrnament theme={activeTheme} size={15} />
-            <span className="hidden xl:inline">{themeMeta.shortName}</span>
+            <AnimatePresence initial={false} mode="wait">
+              <motion.span
+                key={`ornament-${activeTheme}`}
+                initial={{ opacity: 0, scale: 0.6, rotate: -25 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.6, rotate: 25 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+                className="inline-flex"
+              >
+                <ThemeOrnament theme={activeTheme} size={15} />
+              </motion.span>
+            </AnimatePresence>
+            <span className="hidden xl:inline">
+              <AnimatePresence initial={false} mode="wait">
+                <motion.span
+                  key={`label-${activeTheme}`}
+                  initial={{ opacity: 0, y: 3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -3 }}
+                  transition={{ duration: 0.16, ease: [0.33, 1, 0.68, 1] }}
+                  className="inline-block"
+                >
+                  {themeMeta.shortName}
+                </motion.span>
+              </AnimatePresence>
+            </span>
             <Palette className="w-3.5 h-3.5 text-theme-accent xl:hidden" />
             {themeOverrideCount > 0 && (
               <span
@@ -323,7 +384,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
                 {themeOverrideCount}
               </span>
             )}
-          </button>
+          </motion.button>
 
           {/* 10-Min Reminders Center Button */}
           <div className="relative">

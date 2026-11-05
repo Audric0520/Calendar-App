@@ -17,6 +17,13 @@ import {
 import { EventOccurrence } from '../../types/calendar';
 import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
 import { formatRecurrenceSummary } from '../../utils/calendarMath';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  EXIT_MEDIUM,
+  modalBackdropVariants,
+  modalPanelVariants,
+} from '../../motion/presets';
+import { SkeletonImage } from '../../motion/SkeletonImage';
 
 interface EventDetailModalProps {
   occurrence: EventOccurrence | null;
@@ -40,6 +47,15 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
 
+  // Hold the last occurrence while the close animation plays so the panel can
+  // fade/scale out instead of unmounting instantly.
+  const [retainedOccurrence, setRetainedOccurrence] =
+    useState<EventOccurrence | null>(occurrence);
+
+  useEffect(() => {
+    if (occurrence) setRetainedOccurrence(occurrence);
+  }, [occurrence]);
+
   useEffect(() => {
     setLightboxOpen(false);
     setImgError(false);
@@ -57,31 +73,45 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxOpen, occurrence, onClose]);
 
-  if (!occurrence) return null;
+  const activeOccurrence = occurrence ?? retainedOccurrence;
+  if (!activeOccurrence) return null;
 
-  const { event, start, end } = occurrence;
+  const { event, start, end } = activeOccurrence;
   const cat = resolveCategoryMeta(event.category, categoryMap);
   const hasImage = Boolean(event.imageUrl && !imgError);
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/55 backdrop-blur-sm"
-        onClick={onClose}
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden"
+      <AnimatePresence onExitComplete={() => setRetainedOccurrence(null)}>
+        {occurrence && (
+        <motion.div
+          key="detail-backdrop"
+          variants={modalBackdropVariants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/55 backdrop-blur-md"
+          onClick={onClose}
         >
+          <motion.div
+            variants={modalPanelVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden gpu-layer"
+          >
           {/* Full Image Preview Header (when event has attached image) */}
           {hasImage ? (
             <div className="relative bg-black/90 max-h-72 overflow-hidden group shrink-0">
-              <img
+              <SkeletonImage
                 src={event.imageUrl}
                 alt={event.title}
-                onError={() => setImgError(true)}
+                rounded="rounded-none"
+                className="w-full max-h-72 min-h-40 bg-black/40"
+                imgClassName="w-full max-h-72 object-contain mx-auto cursor-zoom-in"
+                onErrorImage={() => setImgError(true)}
                 onClick={() => setLightboxOpen(true)}
-                className="w-full max-h-72 object-contain mx-auto cursor-zoom-in"
               />
               <div className="absolute top-3 right-3 flex items-center gap-1.5">
                 <button
@@ -250,7 +280,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => onDuplicate(occurrence)}
+                onClick={() => onDuplicate(activeOccurrence)}
                 className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold border border-theme-border text-theme-text-secondary hover:bg-theme-cell-hover transition-colors"
               >
                 <Copy className="w-3.5 h-3.5" />
@@ -259,7 +289,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => onEdit(occurrence)}
+                onClick={() => onEdit(activeOccurrence)}
                 style={{
                   backgroundColor: 'var(--t-accent)',
                   color: 'var(--t-accent-contrast)',
@@ -271,29 +301,40 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </button>
             </div>
           </div>
-        </div>
-      </div>
+        </motion.div>
+        </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Fullscreen Image Lightbox */}
-      {lightboxOpen && hasImage && (
-        <div
-          onClick={() => setLightboxOpen(false)}
-          className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
-        >
-          <button
-            type="button"
+      <AnimatePresence>
+        {lightboxOpen && hasImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: EXIT_MEDIUM }}
             onClick={() => setLightboxOpen(false)}
-            className="absolute top-4 right-4 p-2.5 rounded-full bg-white/15 text-white hover:bg-white/25"
+            className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
           >
-            <X className="w-5 h-5" />
-          </button>
-          <img
-            src={event.imageUrl}
-            alt={event.title}
-            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
-          />
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              className="absolute top-4 right-4 p-2.5 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <motion.img
+              src={event.imageUrl}
+              alt={event.title}
+              initial={{ scale: 0.94, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.97, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 };

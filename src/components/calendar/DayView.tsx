@@ -16,12 +16,15 @@ import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
 import { THEME_DEFINITIONS } from '../../constants/themes';
 import { EventCard } from './EventCard';
 import { ThemeOrnament } from './ThemeOrnament';
+import { TodayPulse } from '../../motion/TodayPulse';
 
 interface DayViewProps {
   currentDate: Date;
   occurrences: EventOccurrence[];
   categoryMap: Record<string, CategoryMeta>;
   activeTheme: ThemeId;
+  /** Replays the "back to today" landing pulse when it changes. */
+  todayPulseToken: number;
   onCreateAtSlot: (
     date: Date,
     hour: number,
@@ -40,6 +43,7 @@ export const DayView: React.FC<DayViewProps> = ({
   occurrences,
   categoryMap,
   activeTheme,
+  todayPulseToken,
   onCreateAtSlot,
   onSelectOccurrence,
   onToggleTaskComplete,
@@ -62,11 +66,13 @@ export const DayView: React.FC<DayViewProps> = ({
     [dayOccurrences, currentDate]
   );
 
+  // Re-anchor the timeline whenever the day changes so the incoming grid is
+  // always positioned at the same morning starting point.
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 7.5 * HOUR_HEIGHT_PX;
     }
-  }, []);
+  }, [currentDate]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 60_000);
@@ -103,28 +109,34 @@ export const DayView: React.FC<DayViewProps> = ({
           className="px-4 py-3 border-b border-theme-border flex items-center justify-between gap-3 shrink-0"
         >
           <div className="flex items-center gap-3">
-            <div
-              style={
-                todayFlag
-                  ? {
-                      backgroundColor: 'var(--t-accent)',
-                      color: 'var(--t-accent-contrast)',
-                    }
-                  : undefined
-              }
-              className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center font-bold tabular-nums shadow-sm ${
-                todayFlag
-                  ? ''
-                  : 'bg-theme-elevated border border-theme-border text-theme-text'
-              }`}
+            <TodayPulse
+              token={todayFlag ? todayPulseToken : 0}
+              scale={1.08}
+              className="shrink-0"
             >
-              <span className="text-[10px] uppercase tracking-wider opacity-85">
-                {format(currentDate, 'EEE')}
-              </span>
-              <span className="text-lg leading-none mt-0.5">
-                {format(currentDate, 'd')}
-              </span>
-            </div>
+              <div
+                style={
+                  todayFlag
+                    ? {
+                        backgroundColor: 'var(--t-accent)',
+                        color: 'var(--t-accent-contrast)',
+                      }
+                    : undefined
+                }
+                className={`w-12 h-12 rounded-2xl flex flex-col items-center justify-center font-bold tabular-nums shadow-sm ${
+                  todayFlag
+                    ? ''
+                    : 'bg-theme-elevated border border-theme-border text-theme-text'
+                }`}
+              >
+                <span className="text-[10px] uppercase tracking-wider opacity-85">
+                  {format(currentDate, 'EEE')}
+                </span>
+                <span className="text-lg leading-none mt-0.5">
+                  {format(currentDate, 'd')}
+                </span>
+              </div>
+            </TodayPulse>
 
             <div>
               <h2 className="text-base sm:text-lg font-extrabold text-theme-text">

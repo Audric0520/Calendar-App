@@ -8,6 +8,7 @@ import {
 } from '../../utils/calendarMath';
 import { CategoryMeta } from '../../constants/categories';
 import { EventCard } from './EventCard';
+import { TodayPulse } from '../../motion/TodayPulse';
 
 interface WeekViewProps {
   currentDate: Date;
@@ -15,6 +16,8 @@ interface WeekViewProps {
   occurrences: EventOccurrence[];
   categoryMap: Record<string, CategoryMeta>;
   activeTheme: ThemeId;
+  /** Replays the "back to today" landing pulse when it changes. */
+  todayPulseToken: number;
   onSelectDate: (date: Date) => void;
   onCreateAtSlot: (date: Date, hour: number, minute: number, allDay?: boolean) => void;
   onSelectOccurrence: (occ: EventOccurrence, e: React.MouseEvent) => void;
@@ -31,6 +34,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
   occurrences,
   categoryMap,
   activeTheme,
+  todayPulseToken,
   onSelectDate,
   onCreateAtSlot,
   onSelectOccurrence,
@@ -42,12 +46,12 @@ export const WeekView: React.FC<WeekViewProps> = ({
 
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate]);
 
+  // Scroll to ~7:30 AM on mount and whenever a new week slides in, so the
+  // incoming grid never appears scrolled to a different position.
   useEffect(() => {
-    // Scroll to ~7:30 AM on initial render
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 7.5 * HOUR_HEIGHT_PX;
-    }
-  }, []);
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = 7.5 * HOUR_HEIGHT_PX;
+  }, [currentDate]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 60_000);
@@ -81,31 +85,36 @@ export const WeekView: React.FC<WeekViewProps> = ({
               <div className="text-[10px] font-bold uppercase tracking-wider text-theme-text-secondary">
                 {format(day, 'EEE')}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectDate(day);
-                  onJumpToDayView(day);
-                }}
-                style={
-                  todayFlag
-                    ? {
-                        backgroundColor: 'var(--t-accent)',
-                        color: 'var(--t-accent-contrast)',
-                      }
-                    : undefined
-                }
-                className={`mt-1 inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold tabular-nums transition-transform hover:scale-105 ${
-                  todayFlag
-                    ? 'shadow-sm'
-                    : selectedFlag
-                    ? 'ring-2 ring-theme-accent text-theme-text'
-                    : 'text-theme-text hover:bg-theme-cell-hover'
-                }`}
-                title={`View ${format(day, 'EEEE, MMM d')}`}
+              <TodayPulse
+                token={todayFlag ? todayPulseToken : 0}
+                className="mt-1 justify-center"
               >
-                {format(day, 'd')}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectDate(day);
+                    onJumpToDayView(day);
+                  }}
+                  style={
+                    todayFlag
+                      ? {
+                          backgroundColor: 'var(--t-accent)',
+                          color: 'var(--t-accent-contrast)',
+                        }
+                      : undefined
+                  }
+                  className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold tabular-nums transition-transform hover:scale-105 active:scale-95 ${
+                    todayFlag
+                      ? 'shadow-sm'
+                      : selectedFlag
+                      ? 'ring-2 ring-theme-accent text-theme-text'
+                      : 'text-theme-text hover:bg-theme-cell-hover'
+                  }`}
+                  title={`View ${format(day, 'EEEE, MMM d')}`}
+                >
+                  {format(day, 'd')}
+                </button>
+              </TodayPulse>
             </div>
           );
         })}

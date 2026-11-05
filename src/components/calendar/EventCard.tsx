@@ -4,6 +4,7 @@ import { CheckCircle2, Circle, Image as ImageIcon, MapPin, Repeat } from 'lucide
 import { EventOccurrence, ThemeId } from '../../types/calendar';
 import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
 import { THEME_DEFINITIONS } from '../../constants/themes';
+import { SkeletonImage } from '../../motion/SkeletonImage';
 
 interface EventCardProps {
   occurrence: EventOccurrence;
@@ -56,7 +57,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           color: event.allDay ? cat.textOnSolid : textStyle,
           borderLeft: event.allDay ? undefined : `3px solid ${cat.color}`,
         }}
-        className={`group/ev relative flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[11px] leading-tight font-medium cursor-pointer transition-all hover:brightness-95 dark:hover:brightness-110 shadow-sm select-none overflow-hidden ${
+        className={`group/ev event-card-lift relative flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-[11px] leading-tight font-medium cursor-pointer hover:brightness-95 dark:hover:brightness-110 shadow-sm select-none overflow-hidden ${
           event.completed ? 'opacity-55 line-through' : ''
         }`}
         title={`${event.title} • ${cat.label}${
@@ -82,14 +83,14 @@ export const EventCard: React.FC<EventCardProps> = ({
         )}
 
         {hasValidImage && (
-          <span className="shrink-0 w-4 h-4 rounded overflow-hidden ring-1 ring-black/10 bg-black/10">
-            <img
-              src={event.imageUrl}
-              alt=""
-              onError={() => setImgFailed(true)}
-              className="w-full h-full object-cover"
-            />
-          </span>
+          <SkeletonImage
+            src={event.imageUrl}
+            alt=""
+            rounded="rounded"
+            className="shrink-0 w-4 h-4 ring-1 ring-black/10 bg-black/10"
+            imgClassName="w-full h-full object-cover"
+            onErrorImage={() => setImgFailed(true)}
+          />
         )}
 
         {!event.allDay && !compact && (
@@ -133,7 +134,7 @@ export const EventCard: React.FC<EventCardProps> = ({
         borderLeftWidth: '4px',
         borderLeftColor: cat.color,
       }}
-      className={`h-full w-full rounded-lg border shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex flex-col justify-between p-1.5 select-none ${
+      className={`event-card-lift h-full w-full rounded-lg border shadow-sm hover:shadow-md cursor-pointer overflow-hidden flex flex-col justify-between p-1.5 select-none ${
         event.completed ? 'opacity-60' : ''
       }`}
     >
@@ -184,24 +185,24 @@ export const EventCard: React.FC<EventCardProps> = ({
           </div>
 
           {showCompactThumb && (
-            <div className="shrink-0 w-7 h-7 rounded-md overflow-hidden ring-1 ring-black/15 shadow-sm bg-black/10">
-              <img
-                src={event.imageUrl}
-                alt=""
-                onError={() => setImgFailed(true)}
-                className="w-full h-full object-cover"
-              />
-            </div>
+            <SkeletonImage
+              src={event.imageUrl}
+              alt=""
+              className="shrink-0 w-7 h-7 ring-1 ring-black/15 shadow-sm bg-black/10"
+              imgClassName="w-full h-full object-cover"
+              onErrorImage={() => setImgFailed(true)}
+            />
           )}
         </div>
 
         {showRichMedia && (
           <div className="relative mt-0.5 flex-1 min-h-[34px] rounded-md overflow-hidden ring-1 ring-black/10 bg-black/10">
-            <img
+            <SkeletonImage
               src={event.imageUrl}
               alt={event.title}
-              onError={() => setImgFailed(true)}
-              className="w-full h-full object-cover"
+              className="absolute inset-0"
+              imgClassName="w-full h-full object-cover"
+              onErrorImage={() => setImgFailed(true)}
             />
             <span className="absolute bottom-1 right-1 bg-black/55 text-white rounded px-1 py-0.5 text-[9px] flex items-center gap-0.5 backdrop-blur-sm">
               <ImageIcon className="w-2.5 h-2.5" />

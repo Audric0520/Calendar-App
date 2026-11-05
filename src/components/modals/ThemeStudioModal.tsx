@@ -22,6 +22,11 @@ import {
   resolveWeekTheme,
 } from '../../utils/themeResolver';
 import { ThemeOrnament } from '../calendar/ThemeOrnament';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  modalBackdropVariants,
+  modalPanelVariants,
+} from '../../motion/presets';
 
 interface ThemeStudioModalProps {
   isOpen: boolean;
@@ -58,16 +63,25 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
     Object.keys(themePrefs.monthThemes).length +
     Object.keys(themePrefs.weekThemes).length;
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-sm"
+    <AnimatePresence>
+      {isOpen && (
+    <motion.div
+      key="theme-studio-backdrop"
+      variants={modalBackdropVariants}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-md"
       onClick={onClose}
     >
-      <div
+      <motion.div
+        variants={modalPanelVariants}
+        initial="enter"
+        animate="center"
+        exit="exit"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden"
+        className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden gpu-layer"
       >
         {/* Header */}
         <div
@@ -443,7 +457,9 @@ export const ThemeStudioModal: React.FC<ThemeStudioModalProps> = ({
             Done
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
