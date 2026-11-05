@@ -38,15 +38,29 @@ export interface CustomRecurrenceConfig {
 export type DefaultCategoryId =
   | 'class-sched'
   | 'class-events'
-  | 'class-exams';
+  | 'class-exams'
+  | 'academic'
+  | 'personal';
 
 export type EventCategory = DefaultCategoryId | (string & {});
+
+/**
+ * Which item type a tag belongs to. Event tags and Task tags are two separate
+ * sets: events use the class-oriented tags, tasks only use Academic / Personal
+ * plus any tags the user creates for tasks.
+ */
+export type CategoryScope = 'event' | 'task';
+
+/** Quick filter presets for which item types the calendar draws. */
+export type CalendarScopeFilter = 'both' | 'events' | 'tasks';
 
 export interface CategoryTag {
   id: EventCategory;
   label: string;
   color: string;
   isCustom?: boolean;
+  /** Item type this tag belongs to. Missing on legacy tags -> resolved by id. */
+  scope?: CategoryScope;
 }
 
 export interface CalendarEvent {
@@ -105,6 +119,8 @@ export interface ReminderAlert {
   end: Date;
   location: string;
   category: EventCategory;
+  /** Task alerts use the task tag palette. */
+  isTask?: boolean;
   imageUrl?: string;
   triggeredAt: Date;
 }

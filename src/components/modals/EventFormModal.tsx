@@ -37,6 +37,7 @@ import {
   CategoryTag,
   CustomRecurrenceConfig,
   EventCategory,
+  CategoryScope,
   EventDraft,
   RecurrenceRule,
 } from '../../types/calendar';
@@ -64,8 +65,15 @@ import { SkeletonImage } from '../../motion/SkeletonImage';
 interface EventFormModalProps {
   isOpen: boolean;
   initialDraft: EventDraft;
-  categories: CategoryMeta[];
-  onAddCustomCategory: (label: string, color: string) => CategoryTag;
+  /** Tags available when composing an Event. */
+  eventCategories: CategoryMeta[];
+  /** Tags available when composing a Task (Academic / Personal + custom). */
+  taskCategories: CategoryMeta[];
+  onAddCustomCategory: (
+    label: string,
+    color: string,
+    scope?: CategoryScope
+  ) => CategoryTag;
   onDeleteCustomCategory: (id: string) => void;
   onClose: () => void;
   onSave: (draft: EventDraft) => void;
@@ -179,7 +187,8 @@ function buildEndTimeOptions(
 export const EventFormModal: React.FC<EventFormModalProps> = ({
   isOpen,
   initialDraft,
-  categories,
+  eventCategories,
+  taskCategories,
   onAddCustomCategory,
   onDeleteCustomCategory,
   onClose,
@@ -322,6 +331,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       setPopoverCoords(null);
     }
   }, [isOpen]);
+
+  // Switching between Event and Task swaps the tag set, so any half-finished
+  // "create tag" form is closed to avoid filing a tag under the wrong type.
+  useEffect(() => {
+    setIsAddingTag(false);
+    setNewTagLabel('');
+    setTagError(null);
+  }, [draft.isTask]);
 
   // Keep editable time text inputs synchronized with draft.start / draft.end
   useEffect(() => {
@@ -470,13 +487,18 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   // snapshot so the panel can animate out instead of vanishing instantly.
   const view: EventDraft = isOpen ? draft : retainedDraft;
 
+  // Event vs Task expose completely separate tag sets.
+  const activeScope: CategoryScope = view.isTask ? 'task' : 'event';
+  const scopeCategories =
+    activeScope === 'task' ? taskCategories : eventCategories;
   const categoryMapObj: Record<string, CategoryMeta> = {};
-  for (const c of categories) {
+  for (const c of [...eventCategories, ...taskCategories]) {
     categoryMapObj[c.id] = c;
   }
   const selectedCategoryMeta = resolveCategoryMeta(
     view.category,
-    categoryMapObj
+    categoryMapObj,
+    activeScope
   );
 
   const presetOptions: {
@@ -633,6 +655,27 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     setCustomModalOpen(false);
   };
 
+  /**
+   * Switch the draft between Event and Task. A tag that does not exist in the
+   * destination type's set is replaced by that type's default tag, so a task can
+   * never keep an event-only tag (and vice versa).
+   */
+  const handleSwitchScope = (scope: CategoryScope) => {
+    setDraft((prev) => {
+      const nextTags = scope === 'task' ? taskCategories : eventCategories;
+      const keep = nextTags.some((c) => c.id === prev.category);
+      return {
+        ...prev,
+        isTask: scope === 'task',
+        category: keep
+          ? prev.category
+          : scope === 'task'
+            ? 'academic'
+            : 'class-sched',
+      };
+    });
+  };
+
   const handleCreateCustomTag = () => {
     const cleanLabel = newTagLabel.trim();
     if (!cleanLabel) {
@@ -640,15 +683,18 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       newTagInputRef.current?.focus();
       return;
     }
-    const duplicate = categories.some(
+    // Duplicates only matter inside the item type being edited
+    const duplicate = scopeCategories.some(
       (c) => c.label.toLowerCase() === cleanLabel.toLowerCase()
     );
     if (duplicate) {
-      setTagError('A tag with that name already exists.');
+      setTagError(
+        `A ${activeScope === 'task' ? 'task' : 'event'} tag with that name already exists.`
+      );
       return;
     }
 
-    const created = onAddCustomCategory(cleanLabel, newTagColor);
+    const created = onAddCustomCategory(cleanLabel, newTagColor, activeScope);
     setDraft((prev) => ({ ...prev, category: created.id }));
     setNewTagLabel('');
     setTagError(null);
@@ -795,11 +841,12 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                 className="w-full bg-transparent text-[22px] sm:text-2xl font-normal text-theme-text placeholder:text-theme-text-muted pb-1.5 border-b-2 border-theme-border focus:border-theme-accent focus:outline-none transition-colors"
               />
 
-              {/* Event | Task Switcher (Only existing functions) */}
+              {/* Event | Task Switcher — switching type also swaps the tag set,
+                  so the selected tag is moved onto that type's default tag */}
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setDraft((p) => ({ ...p, isTask: false }))}
+                  onClick={() => handleSwitchScope('event')}
                   className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm transition-all ${
                     !view.isTask
                       ? 'bg-theme-accent-soft text-theme-accent font-semibold ring-1 ring-theme-accent/35'
@@ -810,7 +857,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDraft((p) => ({ ...p, isTask: true }))}
+                  onClick={() => handleSwitchScope('task')}
                   className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm transition-all ${
                     view.isTask
                       ? 'bg-theme-accent-soft text-theme-accent font-semibold ring-1 ring-theme-accent/35'
@@ -1344,12 +1391,19 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                         {selectedCategoryMeta.label}
                       </span>
                       <span
+                        className="shrink-0 rounded-full border border-theme-border bg-theme-elevated px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-theme-text-secondary"
+                        title={`${view.isTask ? 'Task' : 'Event'} tag`}
+                      >
+                        {view.isTask ? 'Task' : 'Event'}
+                      </span>
+                      <span
                         style={{ backgroundColor: selectedCategoryMeta.color }}
                         className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm ring-1 ring-black/10"
                       />
                     </div>
                     <div className="text-xs text-theme-text-secondary mt-0.5">
-                      Notify 10 minutes before
+                      {view.isTask ? 'Task tag' : 'Event tag'} · Notify 10
+                      minutes before
                     </div>
                   </div>
 
@@ -1365,7 +1419,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   <div className="px-3.5 pb-3.5 pt-2 border-t border-theme-border/60 space-y-2.5 bg-theme-elevated/65 rounded-b-xl">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold text-theme-text-muted">
-                        Choose tag
+                        Choose {view.isTask ? 'task' : 'event'} tag
                       </span>
                       <button
                         type="button"
@@ -1380,12 +1434,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                         className="inline-flex items-center gap-1 rounded-lg border border-theme-border bg-theme-surface hover:bg-theme-cell-hover px-2.5 py-1 text-[11px] font-bold text-theme-accent transition-colors"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        {isAddingTag ? 'Cancel New Tag' : 'Add New Tag'}
+                        {isAddingTag
+                          ? 'Cancel New Tag'
+                          : `Add ${view.isTask ? 'Task' : 'Event'} Tag`}
                       </button>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {categories.map((cat) => {
+                      {scopeCategories.map((cat) => {
                         const selected = view.category === cat.id;
                         return (
                           <div
@@ -1421,7 +1477,9 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                                   if (view.category === cat.id) {
                                     setDraft((p) => ({
                                       ...p,
-                                      category: 'class-sched',
+                                      category: p.isTask
+                                        ? 'academic'
+                                        : 'class-sched',
                                     }));
                                   }
                                   onDeleteCustomCategory(cat.id);
@@ -1442,7 +1500,8 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                       <div className="rounded-xl border border-theme-border-strong/60 bg-theme-surface p-3 space-y-2.5 shadow-sm">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-extrabold text-theme-text">
-                            Create Custom Tag
+                            Create {activeScope === 'task' ? 'Task' : 'Event'}{' '}
+                            Tag
                           </span>
                           <span
                             style={{

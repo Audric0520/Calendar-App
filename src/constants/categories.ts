@@ -1,4 +1,8 @@
-import { CategoryTag, EventCategory } from '../types/calendar';
+import {
+  CategoryScope,
+  CategoryTag,
+  EventCategory,
+} from '../types/calendar';
 
 export interface CategoryMeta {
   id: EventCategory;
@@ -11,34 +15,105 @@ export interface CategoryMeta {
   textOnSolid: string;
   border: string;
   isCustom?: boolean;
+  /** Item type this tag belongs to (`event` | `task`). */
+  scope: CategoryScope;
 }
 
+/** Labels used wherever an active scope has to be named in the UI. */
+export const CATEGORY_SCOPE_LABEL: Record<CategoryScope, string> = {
+  event: 'Event',
+  task: 'Task',
+};
+
 /**
- * Built-in baseline categories:
+ * Built-in EVENT categories:
  * 1. Class Sched (Purple)
  * 2. Class Events (Light Blue)
  * 3. Class Exams (Green)
  */
-export const DEFAULT_CATEGORY_TAGS: CategoryTag[] = [
+export const EVENT_CATEGORY_TAGS: CategoryTag[] = [
   {
     id: 'class-sched',
     label: 'Class Sched',
     color: '#8b5cf6', // Purple
     isCustom: false,
+    scope: 'event',
   },
   {
     id: 'class-events',
     label: 'Class Events',
     color: '#38bdf8', // Light Blue
     isCustom: false,
+    scope: 'event',
   },
   {
     id: 'class-exams',
     label: 'Class Exams',
     color: '#22c55e', // Green
     isCustom: false,
+    scope: 'event',
   },
 ];
+
+/**
+ * Built-in TASK categories — deliberately separate from the event set so a
+ * task can never be filed under "Class Exams" and vice versa:
+ * 1. Academic (Blue)
+ * 2. Personal (Green)
+ */
+export const TASK_CATEGORY_TAGS: CategoryTag[] = [
+  {
+    id: 'academic',
+    label: 'Academic',
+    color: '#2563eb', // Blue
+    isCustom: false,
+    scope: 'task',
+  },
+  {
+    id: 'personal',
+    label: 'Personal',
+    color: '#15803d', // Deep forest green (deliberately darker than Class Exams)
+    isCustom: false,
+    scope: 'task',
+  },
+];
+
+/** Every built-in tag across both item types. */
+export const DEFAULT_CATEGORY_TAGS: CategoryTag[] = [
+  ...EVENT_CATEGORY_TAGS,
+  ...TASK_CATEGORY_TAGS,
+];
+
+const BUILT_IN_TAG_BY_ID: Record<string, CategoryTag> = Object.fromEntries(
+  DEFAULT_CATEGORY_TAGS.map((tag) => [tag.id, tag])
+);
+
+/** Tag used when a custom tag for a scope is deleted, keyed by scope. */
+export const SCOPE_FALLBACK_TAG_ID: Record<CategoryScope, EventCategory> = {
+  event: 'class-sched',
+  task: 'academic',
+};
+
+/**
+ * Resolves which item type a tag belongs to. Custom tags carry an explicit
+ * scope; legacy tags without one are inferred from the built-in id, and any
+ * unknown id falls back to the Event set.
+ */
+export function resolveTagScope(
+  tagId: EventCategory,
+  tags: CategoryTag[] = []
+): CategoryScope {
+  const found = tags.find((t) => t.id === tagId);
+  if (found?.scope) return found.scope;
+  const builtIn = BUILT_IN_TAG_BY_ID[tagId];
+  if (builtIn?.scope) return builtIn.scope;
+  return 'event';
+}
+
+/** The tag an item of this scope should fall back to. */
+export function getFallbackTagId(scope: CategoryScope): EventCategory {
+  return SCOPE_FALLBACK_TAG_ID[scope];
+}
 
 export const PRESET_TAG_SWATCHES: string[] = [
   '#f43f5e', // Rose Red
@@ -108,6 +183,7 @@ export function buildCategoryMeta(tag: CategoryTag): CategoryMeta {
     textOnSolid: luminance > 0.62 ? '#082f49' : '#ffffff',
     border: mixColors(rgb, [15, 23, 42], 0.88),
     isCustom: tag.isCustom,
+    scope: tag.scope ?? resolveTagScope(tag.id),
   };
 }
 
@@ -121,13 +197,34 @@ export function buildCategoryMap(
   return map;
 }
 
+/** Tags of a single item type, in display order (built-ins first). */
+export function getCategoryTagsByScope(
+  scope: CategoryScope,
+  customTags: CategoryTag[] = []
+): CategoryTag[] {
+  const builtIns = scope === 'task' ? TASK_CATEGORY_TAGS : EVENT_CATEGORY_TAGS;
+  return [
+    ...builtIns,
+    ...customTags.filter((t) => (t.scope ?? resolveTagScope(t.id)) === scope),
+  ];
+}
+
+/**
+ * Resolves display metadata for a tag. If the tag exists but belongs to the
+ * other item type (e.g. an event tag left on a task), the type's own fallback
+ * tag is used so a task never renders with an event palette.
+ */
 export function resolveCategoryMeta(
   categoryId: EventCategory,
-  categoryMap: Record<string, CategoryMeta>
+  categoryMap: Record<string, CategoryMeta>,
+  scope: CategoryScope = 'event'
 ): CategoryMeta {
+  const found = categoryMap[categoryId];
+  if (found && found.scope === scope) return found;
   return (
-    categoryMap[categoryId] ||
-    categoryMap['class-sched'] ||
-    buildCategoryMeta(DEFAULT_CATEGORY_TAGS[0])
+    categoryMap[getFallbackTagId(scope)] ||
+    buildCategoryMeta(
+      scope === 'task' ? TASK_CATEGORY_TAGS[0] : EVENT_CATEGORY_TAGS[0]
+    )
   );
 }

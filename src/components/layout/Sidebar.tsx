@@ -21,6 +21,8 @@ import {
   X,
 } from 'lucide-react';
 import {
+  CalendarScopeFilter,
+  CategoryScope,
   CategoryTag,
   EventCategory,
   EventOccurrence,
@@ -47,14 +49,25 @@ interface SidebarProps {
   currentDate: Date;
   selectedDate: Date;
   occurrences: EventOccurrence[];
-  categories: CategoryMeta[];
+  /** Event-only tags (Class Sched / Class Events / Class Exams + custom). */
+  eventCategories: CategoryMeta[];
+  /** Task-only tags (Academic / Personal + custom). */
+  taskCategories: CategoryMeta[];
   visibleCategories: EventCategory[];
+  /** Which item types are drawn on the calendar at all. */
+  visibleScopes: CategoryScope[];
   themePrefs: ThemePreferences;
   onCloseMobileDrawer: () => void;
   onCreateEvent: () => void;
   onSelectMiniDate: (date: Date) => void;
   onToggleCategory: (cat: EventCategory) => void;
-  onAddCustomCategory: (label: string, color: string) => CategoryTag;
+  onToggleScope: (scope: CategoryScope) => void;
+  onSetScopeFilter: (filter: CalendarScopeFilter) => void;
+  onAddCustomCategory: (
+    label: string,
+    color: string,
+    scope?: CategoryScope
+  ) => CategoryTag;
   onDeleteCustomCategory: (id: string) => void;
   onSetGlobalTheme: (theme: ThemeId) => void;
   onOpenThemeStudio: () => void;
@@ -63,19 +76,265 @@ interface SidebarProps {
 
 const MINI_DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
+interface ScopeTagBlockProps {
+  scope: CategoryScope;
+  title: string;
+  accent: string;
+  tags: CategoryMeta[];
+  /** Whether this item type is drawn on the calendar at all. */
+  visible: boolean;
+  /** Dim + disable tag rows when the whole type is hidden. */
+  collapsed: boolean;
+  visibleCategories: EventCategory[];
+  addingTagFor: CategoryScope | null;
+  tagName: string;
+  tagColor: string;
+  tagErr: string | null;
+  onToggleScope: (scope: CategoryScope) => void;
+  onToggleCategory: (cat: EventCategory) => void;
+  onStartAddTag: (scope: CategoryScope) => void;
+  onDeleteCustomCategory: (id: string) => void;
+  setTagName: (v: string) => void;
+  setTagColor: (v: string) => void;
+  setTagErr: (v: string | null) => void;
+  setAddingTagFor: (v: CategoryScope | null) => void;
+  onSubmitTag: (e: React.FormEvent) => void;
+}
+
+/**
+ * One item-type block (Events or Tasks) inside the sidebar filter panel.
+ * The header checkbox is the master switch for that type; the rows below filter
+ * individual tags of that type only.
+ */
+const ScopeTagBlock: React.FC<ScopeTagBlockProps> = ({
+  scope,
+  title,
+  accent,
+  tags,
+  visible,
+  collapsed,
+  visibleCategories,
+  addingTagFor,
+  tagName,
+  tagColor,
+  tagErr,
+  onToggleScope,
+  onToggleCategory,
+  onStartAddTag,
+  onDeleteCustomCategory,
+  setTagName,
+  setTagColor,
+  setTagErr,
+  setAddingTagFor,
+  onSubmitTag,
+}) => {
+  const isAdding = addingTagFor === scope;
+
+  return (
+    <div className="rounded-xl border border-theme-border bg-theme-surface/70 overflow-hidden">
+      {/* Master switch + new tag action */}
+      <div className="flex items-center gap-1 px-1.5 py-1.5">
+        <button
+          type="button"
+          onClick={() => onToggleScope(scope)}
+          aria-pressed={visible}
+          className="flex-1 flex items-center gap-2 px-1.5 py-1 rounded-lg text-left min-w-0 hover:bg-theme-cell-hover transition-colors"
+          title={visible ? `Hide all ${title}` : `Show all ${title}`}
+        >
+          <span
+            style={{
+              backgroundColor: visible ? accent : 'transparent',
+              borderColor: accent,
+            }}
+            className="w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors"
+          >
+            {visible && <Check className="w-3 h-3 text-white stroke-[3]" />}
+          </span>
+          <span className="text-xs font-extrabold text-theme-text truncate">
+            {title}
+          </span>
+          <span className="ml-auto text-[10px] font-bold tabular-nums text-theme-text-muted shrink-0">
+            {tags.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            onStartAddTag(scope);
+            setTagErr(null);
+          }}
+          className="inline-flex items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-[11px] font-bold text-theme-accent hover:bg-theme-accent-soft transition-colors shrink-0"
+          title={`Create a new ${title.toLowerCase().replace(' tags', '')} tag`}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New
+        </button>
+      </div>
+
+      {/* Individual tags of this item type */}
+      {!collapsed && (
+        <div className="space-y-0.5 px-1.5 pb-1.5">
+          {tags.map((cat) => {
+            const checked = visibleCategories.includes(cat.id);
+            return (
+              <div
+                key={cat.id}
+                className="group/sidecat flex items-center gap-1 rounded-lg hover:bg-theme-cell-hover pr-1 transition-colors"
+              >
+                <button
+                  type="button"
+                  onClick={() => onToggleCategory(cat.id)}
+                  className="flex-1 flex items-center gap-2.5 px-1.5 py-1 text-left text-xs font-semibold text-theme-text-secondary min-w-0"
+                >
+                  <span
+                    style={{
+                      backgroundColor: checked ? cat.color : 'transparent',
+                      borderColor: cat.color,
+                    }}
+                    className="w-3.5 h-3.5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors"
+                  >
+                    {checked && (
+                      <Check
+                        style={{ color: cat.textOnSolid }}
+                        className="w-2.5 h-2.5 stroke-[3]"
+                      />
+                    )}
+                  </span>
+                  <span
+                    className={`truncate ${
+                      checked ? 'text-theme-text' : 'opacity-60'
+                    }`}
+                  >
+                    {cat.label}
+                  </span>
+                </button>
+
+                {cat.isCustom && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCustomCategory(cat.id)}
+                    className="opacity-0 group-hover/sidecat:opacity-100 focus:opacity-100 p-1 rounded-md text-theme-text-muted hover:text-rose-500 transition-opacity"
+                    title={`Delete "${cat.label}"`}
+                    aria-label={`Delete ${cat.label}`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Inline creator — new tags are filed under this item type */}
+      {isAdding && (
+        <form
+          onSubmit={onSubmitTag}
+          className="border-t border-theme-border/70 bg-theme-elevated/70 p-2.5 space-y-2.5"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-theme-text">
+              New {scope === 'task' ? 'Task' : 'Event'} Tag
+            </span>
+            <span className="text-[10px] font-semibold text-theme-text-muted">
+              {title}
+            </span>
+          </div>
+
+          <input
+            type="text"
+            value={tagName}
+            onChange={(e) => {
+              setTagErr(null);
+              setTagName(e.target.value);
+            }}
+            placeholder="New tag name..."
+            maxLength={28}
+            autoFocus
+            className="w-full rounded-lg border border-theme-border bg-theme-surface px-2.5 py-1.5 text-xs font-semibold text-theme-text placeholder:text-theme-text-muted/65 focus:outline-none focus:border-theme-border-strong"
+          />
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PRESET_TAG_SWATCHES.slice(0, 7).map((hex) => {
+              const active = tagColor.toLowerCase() === hex.toLowerCase();
+              return (
+                <button
+                  key={hex}
+                  type="button"
+                  onClick={() => setTagColor(hex)}
+                  style={{ backgroundColor: hex }}
+                  className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                    active ? 'ring-2 ring-offset-1 ring-theme-text' : ''
+                  }`}
+                  title={hex}
+                />
+              );
+            })}
+
+            <label
+              className="inline-flex items-center gap-1 rounded-md border border-theme-border bg-theme-surface px-1.5 py-0.5 text-[10px] font-bold text-theme-text cursor-pointer ml-auto"
+              title="Custom color picker"
+            >
+              <Pipette className="w-3 h-3 text-theme-accent" />
+              <input
+                type="color"
+                value={tagColor}
+                onChange={(e) => setTagColor(e.target.value)}
+                className="w-4 h-4 rounded cursor-pointer border-0 bg-transparent p-0"
+              />
+            </label>
+          </div>
+
+          {tagErr && (
+            <p className="text-[10px] font-semibold text-rose-500">{tagErr}</p>
+          )}
+
+          <div className="flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setAddingTagFor(null);
+                setTagErr(null);
+              }}
+              className="rounded-lg px-2 py-1 text-[11px] font-semibold text-theme-text-muted hover:bg-theme-cell-hover"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              style={{
+                backgroundColor: 'var(--t-accent)',
+                color: 'var(--t-accent-contrast)',
+              }}
+              className="rounded-lg px-2.5 py-1 text-[11px] font-bold shadow-sm"
+            >
+              Add Tag
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   isMobileDrawerOpen,
   currentDate,
   selectedDate,
   occurrences,
-  categories,
+  eventCategories,
+  taskCategories,
   visibleCategories,
+  visibleScopes,
   themePrefs,
   onCloseMobileDrawer,
   onCreateEvent,
   onSelectMiniDate,
   onToggleCategory,
+  onToggleScope,
+  onSetScopeFilter,
   onAddCustomCategory,
   onDeleteCustomCategory,
   onSetGlobalTheme,
@@ -86,11 +345,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [miniCalendarCollapsed, setMiniCalendarCollapsed] = useState(false);
   const [categoriesCollapsed, setCategoriesCollapsed] = useState(false);
 
-  // Sidebar quick add tag state
-  const [addingTag, setAddingTag] = useState(false);
+  // Sidebar quick add tag state (tags are created for one item type at a time)
+  const [addingTagFor, setAddingTagFor] = useState<CategoryScope | null>(null);
   const [tagName, setTagName] = useState('');
   const [tagColor, setTagColor] = useState('#f43f5e');
   const [tagErr, setTagErr] = useState<string | null>(null);
+
+  const scopeFilter: CalendarScopeFilter =
+    visibleScopes.length === 2
+      ? 'both'
+      : visibleScopes.includes('task')
+        ? 'tasks'
+        : 'events';
 
   useEffect(() => {
     setMiniMonth(currentDate);
@@ -100,21 +366,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleSidebarCreateTag = (e: React.FormEvent) => {
     e.preventDefault();
+    const scope: CategoryScope = addingTagFor ?? 'event';
     const trimmed = tagName.trim();
     if (!trimmed) {
       setTagErr('Enter a tag name');
       return;
     }
+    // Duplicates only matter inside the same item type
+    const scopeTags =
+      scope === 'event' ? eventCategories : taskCategories;
     if (
-      categories.some((c) => c.label.toLowerCase() === trimmed.toLowerCase())
+      scopeTags.some((c) => c.label.toLowerCase() === trimmed.toLowerCase())
     ) {
       setTagErr('Tag already exists');
       return;
     }
-    onAddCustomCategory(trimmed, tagColor);
+    onAddCustomCategory(trimmed, tagColor, scope);
     setTagName('');
     setTagErr(null);
-    setAddingTag(false);
+    setAddingTagFor(null);
   };
 
   const sidebarContent = (
@@ -306,7 +576,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </section>
 
-        {/* Category / Color Tag Filters + Add New Tag */}
+        {/* Calendar Filters — Events and Tasks are listed separately so the
+            user can untick entire item types or individual tags */}
         <section className="rounded-2xl border border-theme-border bg-theme-elevated/60 p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <button
@@ -322,156 +593,106 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
               />
             </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setCategoriesCollapsed(false);
-                setAddingTag((v) => !v);
-                setTagErr(null);
-              }}
-              className="inline-flex items-center gap-0.5 rounded-lg px-2 py-0.5 text-[11px] font-bold text-theme-accent hover:bg-theme-accent-soft transition-colors"
-              title="Create a new custom tag & choose its color"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              New Tag
-            </button>
           </div>
 
           {!categoriesCollapsed && (
             <>
-              <div className="space-y-1">
-                {categories.map((cat) => {
-                  const checked = visibleCategories.includes(cat.id);
+              {/* Master switches: show events and/or tasks */}
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-theme-border bg-theme-surface p-0.5">
+                {(
+                  [
+                    { id: 'both', label: 'Both' },
+                    { id: 'events', label: 'Events' },
+                    { id: 'tasks', label: 'Tasks' },
+                  ] as { id: CalendarScopeFilter; label: string }[]
+                ).map((opt) => {
+                  const active = scopeFilter === opt.id;
                   return (
-                    <div
-                      key={cat.id}
-                      className="group/sidecat flex items-center gap-1 rounded-xl hover:bg-theme-cell-hover pr-1 transition-colors"
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => onSetScopeFilter(opt.id)}
+                      aria-pressed={active}
+                      style={
+                        active
+                          ? {
+                              backgroundColor: 'var(--t-accent)',
+                              color: 'var(--t-accent-contrast)',
+                            }
+                          : undefined
+                      }
+                      className={`rounded-lg px-1.5 py-1 text-[11px] font-bold transition-colors ${
+                        active
+                          ? 'shadow-sm'
+                          : 'text-theme-text-secondary hover:text-theme-text hover:bg-theme-cell-hover'
+                      }`}
+                      title={
+                        opt.id === 'both'
+                          ? 'Show events and tasks'
+                          : opt.id === 'events'
+                            ? 'Show events only'
+                            : 'Show tasks only'
+                      }
                     >
-                      <button
-                        type="button"
-                        onClick={() => onToggleCategory(cat.id)}
-                        className="flex-1 flex items-center gap-2.5 px-2 py-1.5 text-left text-xs font-semibold text-theme-text-secondary min-w-0"
-                      >
-                        <span
-                          style={{
-                            backgroundColor: checked ? cat.color : 'transparent',
-                            borderColor: cat.color,
-                          }}
-                          className="w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors"
-                        >
-                          {checked && (
-                            <Check
-                              style={{ color: cat.textOnSolid }}
-                              className="w-3 h-3 stroke-[3]"
-                            />
-                          )}
-                        </span>
-                        <span
-                          className={`truncate ${
-                            checked ? 'text-theme-text' : 'opacity-60'
-                          }`}
-                        >
-                          {cat.label}
-                        </span>
-                      </button>
-
-                      {cat.isCustom && (
-                        <button
-                          type="button"
-                          onClick={() => onDeleteCustomCategory(cat.id)}
-                          className="opacity-0 group-hover/sidecat:opacity-100 focus:opacity-100 p-1 rounded-md text-theme-text-muted hover:text-rose-500 transition-opacity"
-                          title={`Delete "${cat.label}"`}
-                          aria-label={`Delete ${cat.label}`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
+                      {opt.label}
+                    </button>
                   );
                 })}
               </div>
 
-              {addingTag && (
-                <form
-                  onSubmit={handleSidebarCreateTag}
-                  className="rounded-xl border border-theme-border bg-theme-surface p-2.5 space-y-2.5"
-                >
-                  <input
-                    type="text"
-                    value={tagName}
-                    onChange={(e) => {
-                      setTagErr(null);
-                      setTagName(e.target.value);
-                    }}
-                    placeholder="New tag name..."
-                    maxLength={28}
-                    autoFocus
-                    className="w-full rounded-lg border border-theme-border bg-theme-elevated px-2.5 py-1.5 text-xs font-semibold text-theme-text placeholder:text-theme-text-muted/65 focus:outline-none focus:border-theme-border-strong"
-                  />
+              {/* EVENT tag block */}
+              <ScopeTagBlock
+                scope="event"
+                title="Event Tags"
+                accent="#8b5cf6"
+                tags={eventCategories}
+                visible={visibleScopes.includes('event')}
+                visibleCategories={visibleCategories}
+                collapsed={!visibleScopes.includes('event')}
+                addingTagFor={addingTagFor}
+                tagName={tagName}
+                tagColor={tagColor}
+                tagErr={tagErr}
+                onToggleScope={onToggleScope}
+                onToggleCategory={onToggleCategory}
+                onStartAddTag={(scope) => {
+                  setAddingTagFor((prev) => (prev === scope ? null : scope));
+                  setTagErr(null);
+                }}
+                onDeleteCustomCategory={onDeleteCustomCategory}
+                setTagName={setTagName}
+                setTagColor={setTagColor}
+                setTagErr={setTagErr}
+                setAddingTagFor={setAddingTagFor}
+                onSubmitTag={handleSidebarCreateTag}
+              />
 
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {PRESET_TAG_SWATCHES.slice(0, 7).map((hex) => {
-                      const active =
-                        tagColor.toLowerCase() === hex.toLowerCase();
-                      return (
-                        <button
-                          key={hex}
-                          type="button"
-                          onClick={() => setTagColor(hex)}
-                          style={{ backgroundColor: hex }}
-                          className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                            active ? 'ring-2 ring-offset-1 ring-theme-text' : ''
-                          }`}
-                          title={hex}
-                        />
-                      );
-                    })}
-
-                    <label
-                      className="inline-flex items-center gap-1 rounded-md border border-theme-border bg-theme-elevated px-1.5 py-0.5 text-[10px] font-bold text-theme-text cursor-pointer ml-auto"
-                      title="Custom color picker"
-                    >
-                      <Pipette className="w-3 h-3 text-theme-accent" />
-                      <input
-                        type="color"
-                        value={tagColor}
-                        onChange={(e) => setTagColor(e.target.value)}
-                        className="w-4 h-4 rounded cursor-pointer border-0 bg-transparent p-0"
-                      />
-                    </label>
-                  </div>
-
-                  {tagErr && (
-                    <p className="text-[10px] font-semibold text-rose-500">
-                      {tagErr}
-                    </p>
-                  )}
-
-                  <div className="flex items-center justify-end gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddingTag(false);
-                        setTagErr(null);
-                      }}
-                      className="rounded-lg px-2 py-1 text-[11px] font-semibold text-theme-text-muted hover:bg-theme-cell-hover"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      style={{
-                        backgroundColor: 'var(--t-accent)',
-                        color: 'var(--t-accent-contrast)',
-                      }}
-                      className="rounded-lg px-2.5 py-1 text-[11px] font-bold shadow-sm"
-                    >
-                      Add Tag
-                    </button>
-                  </div>
-                </form>
-              )}
+              {/* TASK tag block */}
+              <ScopeTagBlock
+                scope="task"
+                title="Task Tags"
+                accent="#2563eb"
+                tags={taskCategories}
+                visible={visibleScopes.includes('task')}
+                visibleCategories={visibleCategories}
+                collapsed={!visibleScopes.includes('task')}
+                addingTagFor={addingTagFor}
+                tagName={tagName}
+                tagColor={tagColor}
+                tagErr={tagErr}
+                onToggleScope={onToggleScope}
+                onToggleCategory={onToggleCategory}
+                onStartAddTag={(scope) => {
+                  setAddingTagFor((prev) => (prev === scope ? null : scope));
+                  setTagErr(null);
+                }}
+                onDeleteCustomCategory={onDeleteCustomCategory}
+                setTagName={setTagName}
+                setTagColor={setTagColor}
+                setTagErr={setTagErr}
+                setAddingTagFor={setAddingTagFor}
+                onSubmitTag={handleSidebarCreateTag}
+              />
             </>
           )}
         </section>

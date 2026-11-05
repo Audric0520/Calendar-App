@@ -199,6 +199,7 @@ export function useReminderEngine({
             end: occ.end,
             location: occ.event.location,
             category: occ.event.category,
+            isTask: occ.event.isTask,
             imageUrl: occ.event.imageUrl,
             triggeredAt: new Date(nowMs),
           });
@@ -267,6 +268,7 @@ export function useReminderEngine({
       end,
       location: 'Main Calendar Studio',
       category: 'class-events',
+      isTask: false,
       triggeredAt: new Date(),
     });
   }, [dispatchAlert]);

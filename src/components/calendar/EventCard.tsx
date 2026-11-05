@@ -29,7 +29,11 @@ export const EventCard: React.FC<EventCardProps> = ({
 }) => {
   const [imgFailed, setImgFailed] = useState(false);
   const { event, start, end } = occurrence;
-  const cat = resolveCategoryMeta(event.category, categoryMap);
+  const cat = resolveCategoryMeta(
+    event.category,
+    categoryMap,
+    event.isTask ? 'task' : 'event'
+  );
   const isDark = THEME_DEFINITIONS[activeTheme]?.isDark ?? false;
 
   const hasValidImage = Boolean(event.imageUrl && !imgFailed);
