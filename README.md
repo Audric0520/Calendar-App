@@ -1,4 +1,4 @@
-# ChronoPalette — Multi-Theme Smart Calendar
+# OmniCal — Multi-Theme Smart Calendar
 
 A responsive, client-side web application inspired by Google Calendar featuring a **Dynamic Weekly & Monthly Theme Engine**, **Multimedia Image Attachments**, **Recurring Events**, and **Automated 10-Minute Pre-Event Reminders**.
 
