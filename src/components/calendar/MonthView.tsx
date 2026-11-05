@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   format,
   isSameDay,
@@ -23,6 +24,9 @@ import { THEME_DEFINITIONS, THEME_LIST } from '../../constants/themes';
 import { CategoryMeta } from '../../constants/categories';
 import { EventCard } from './EventCard';
 import { ThemeOrnament } from './ThemeOrnament';
+import { TodayPulse } from '../../motion/TodayPulse';
+import { SkeletonImage } from '../../motion/SkeletonImage';
+import { DEFAULT_THEME_GLOW, THEME_MOTION } from '../../motion/themeMotion';
 
 interface MonthViewProps {
   currentDate: Date;
@@ -30,6 +34,8 @@ interface MonthViewProps {
   occurrences: EventOccurrence[];
   categoryMap: Record<string, CategoryMeta>;
   themePrefs: ThemePreferences;
+  /** Replays the "back to today" landing pulse when it changes. */
+  todayPulseToken: number;
   onSelectDate: (date: Date) => void;
   onCreateAtDate: (date: Date) => void;
   onSelectOccurrence: (occ: EventOccurrence, e: React.MouseEvent) => void;
@@ -46,6 +52,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   occurrences,
   categoryMap,
   themePrefs,
+  todayPulseToken,
   onSelectDate,
   onCreateAtDate,
   onSelectOccurrence,
@@ -56,6 +63,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
   const [openWeekPickerKey, setOpenWeekPickerKey] = useState<string | null>(
     null
   );
+  const prefersReducedMotion = useReducedMotion();
 
   const weeks = useMemo(() => getMonthWeeks(currentDate), [currentDate]);
 
@@ -88,20 +96,42 @@ export const MonthView: React.FC<MonthViewProps> = ({
           const isPickerOpen = openWeekPickerKey === weekKey;
 
           return (
-            <div
+            <motion.div
               key={weekKey}
               data-theme={resolved.theme}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0 }
+                  : {
+                      duration: 0.28,
+                      delay: Math.min(weekIdx * 0.035, 0.2),
+                      ease: [0.22, 1, 0.36, 1],
+                    }
+              }
               className="week-row-scope group/week flex-1 min-h-[124px] relative flex flex-col border-b border-theme-border last:border-b-0"
             >
-              {/* Subtle floating Per-Week Theme Control Badge */}
+              {/* Subtle floating Per-Week Theme Control Badge
+                  Morphs + glows in whenever this week's palette changes */}
               <div
-                className={`absolute left-1.5 bottom-1.5 z-20 transition-opacity ${
+                className={`absolute left-1.5 bottom-1.5 z-20 transition-opacity duration-300 ${
                   resolved.source === 'week' || isPickerOpen
                     ? 'opacity-100'
                     : 'opacity-0 group-hover/week:opacity-95 focus-within:opacity-100'
                 }`}
                 onClick={(e) => e.stopPropagation()}
               >
+                <motion.div
+                  key={`${weekKey}-${resolved.theme}`}
+                  initial={prefersReducedMotion ? false : { scale: 0.82, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={
+                    prefersReducedMotion
+                      ? { duration: 0 }
+                      : { type: 'spring', stiffness: 460, damping: 26, mass: 0.7 }
+                  }
+                >
                 <button
                   type="button"
                   onClick={() =>
@@ -111,8 +141,21 @@ export const MonthView: React.FC<MonthViewProps> = ({
                     backgroundColor: themeMeta.badgeBg,
                     color: themeMeta.badgeText,
                     borderColor: themeMeta.badgeBorder,
+                    // Week-assigned rows get the animated glow class instead
+                    // (a CSS animation would override an inline shadow).
+                    boxShadow:
+                      resolved.source === 'week'
+                        ? undefined
+                        : `0 0 10px -2px ${
+                            THEME_MOTION[resolved.theme]?.glow ||
+                            DEFAULT_THEME_GLOW
+                          }`,
                   }}
-                  className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-sm hover:scale-[1.03] transition-transform"
+                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-sm hover:scale-[1.04] active:scale-95 transition-transform ${
+                    resolved.source === 'week' && !prefersReducedMotion
+                      ? 'theme-badge-glow'
+                      : ''
+                  }`}
                   title={`Week ${weekIdx + 1} Theme (${format(
                     weekDays[0],
                     'MMM d'
@@ -130,12 +173,19 @@ export const MonthView: React.FC<MonthViewProps> = ({
                   )}
                 </button>
 
+                <AnimatePresence>
                 {isPickerOpen && (
-                  <div
+                  <motion.div
+                    initial={
+                      prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: -4 }
+                    }
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.97, y: -2 }}
+                    transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
                     className={`absolute left-0 ${
                       weekIdx >= weeks.length - 2
-                        ? 'bottom-full mb-1.5'
-                        : 'top-full mt-1.5'
+                        ? 'bottom-full mb-1.5 origin-bottom'
+                        : 'top-full mt-1.5 origin-top'
                     } w-60 rounded-xl border border-slate-200 dark:border-slate-700 bg-white text-slate-900 shadow-2xl p-2.5 z-40`}
                   >
                     <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
@@ -188,8 +238,10 @@ export const MonthView: React.FC<MonthViewProps> = ({
                         );
                       })}
                     </div>
-                  </div>
+                  </motion.div>
                 )}
+                </AnimatePresence>
+                </motion.div>
               </div>
 
               {/* 7 Day Cells inside this scoped Week Row */}
@@ -222,6 +274,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                     >
                       {/* Cell Header: Day Number + Quick Add icon */}
                       <div className="flex items-center justify-between mb-1">
+                        <TodayPulse token={todayFlag ? todayPulseToken : 0}>
                         <button
                           type="button"
                           onClick={(e) => {
@@ -237,7 +290,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                                 }
                               : undefined
                           }
-                          className={`inline-flex items-center justify-center rounded-full text-xs font-bold tabular-nums transition-transform hover:scale-105 ${
+                          className={`inline-flex items-center justify-center rounded-full text-xs font-bold tabular-nums transition-transform hover:scale-105 active:scale-95 ${
                             todayFlag
                               ? 'w-6 h-6 shadow-sm'
                               : isSelected
@@ -252,6 +305,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                             ? format(day, 'MMM d')
                             : format(day, 'd')}
                         </button>
+                        </TodayPulse>
 
                         <span
                           className="opacity-0 group-hover/cell:opacity-80 transition-opacity rounded-full p-0.5 text-theme-text-muted hover:text-theme-accent"
@@ -282,17 +336,13 @@ export const MonthView: React.FC<MonthViewProps> = ({
                               e.stopPropagation();
                               onSelectOccurrence(featuredMediaEvent, e);
                             }}
-                            className="mt-0.5 relative h-11 w-full rounded-md overflow-hidden border border-theme-border shadow-sm group/thumb"
+                            className="mt-0.5 relative h-11 w-full rounded-md overflow-hidden border border-theme-border shadow-sm group/thumb event-card-lift"
                           >
-                            <img
+                            <SkeletonImage
                               src={featuredMediaEvent.event.imageUrl}
                               alt={featuredMediaEvent.event.title}
-                              className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
-                              onError={(e) => {
-                                (
-                                  e.currentTarget.parentElement as HTMLElement
-                                ).style.display = 'none';
-                              }}
+                              className="absolute inset-0"
+                              imgClassName="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
                             />
                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-1.5 py-0.5">
                               <p className="text-[9px] font-semibold text-white truncate">
@@ -319,7 +369,7 @@ export const MonthView: React.FC<MonthViewProps> = ({
                   );
                 })}
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>

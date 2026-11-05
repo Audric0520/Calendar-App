@@ -53,6 +53,13 @@ import {
   parseLocalDateTime,
 } from '../../utils/calendarMath';
 import { CustomRecurrenceModal } from './CustomRecurrenceModal';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  modalBackdropVariants,
+  modalPanelVariants,
+  popoverVariants,
+} from '../../motion/presets';
+import { SkeletonImage } from '../../motion/SkeletonImage';
 
 interface EventFormModalProps {
   isOpen: boolean;
@@ -180,6 +187,8 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   onDelete,
 }) => {
   const [draft, setDraft] = useState<EventDraft>(initialDraft);
+  // Kept in sync while open so the close animation can still render the form.
+  const [retainedDraft, setRetainedDraft] = useState<EventDraft>(initialDraft);
   const [imageMode, setImageMode] = useState<'upload' | 'url'>('upload');
   const [urlInput, setUrlInput] = useState<string>('');
   const [imageError, setImageError] = useState<string | null>(null);
@@ -266,6 +275,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       };
 
       setDraft(normalizedDraft);
+      setRetainedDraft(normalizedDraft);
       setCalendarMonth(startOfMonth(sParsed));
       setStartTimeText(formatMinutes12h(sMins));
       setEndTimeText(formatMinutes12h(eMins));
@@ -298,6 +308,20 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       }, 40);
     }
   }, [initialDraft, isOpen]);
+
+  // Mirror the live draft so the exit animation has content to render.
+  useEffect(() => {
+    if (isOpen) setRetainedDraft(draft);
+  }, [draft, isOpen]);
+
+  // Drop any open schedule/date/time popover the moment the modal closes so it
+  // never lingers above the fade-out.
+  useEffect(() => {
+    if (!isOpen) {
+      setActivePicker(null);
+      setPopoverCoords(null);
+    }
+  }, [isOpen]);
 
   // Keep editable time text inputs synchronized with draft.start / draft.end
   useEffect(() => {
@@ -439,17 +463,19 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     return Array.from({ length: 42 }, (_, idx) => addDays(gridStart, idx));
   }, [calendarMonth]);
 
-  if (!isOpen) return null;
-
   const isEditing = Boolean(draft.id);
   const dateStr = formatDateInput(parsedStartDate);
+
+  // Draft shown by the render pass. When the modal is closing we keep showing a
+  // snapshot so the panel can animate out instead of vanishing instantly.
+  const view: EventDraft = isOpen ? draft : retainedDraft;
 
   const categoryMapObj: Record<string, CategoryMeta> = {};
   for (const c of categories) {
     categoryMapObj[c.id] = c;
   }
   const selectedCategoryMeta = resolveCategoryMeta(
-    draft.category,
+    view.category,
     categoryMapObj
   );
 
@@ -465,10 +491,10 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   ];
 
   const activeRepeatLabel = formatRecurrenceSummary({
-    recurrence: draft.recurrence,
-    recurrenceUntil: draft.recurrenceUntil,
-    customRecurrence: draft.customRecurrence,
-    start: draft.start,
+    recurrence: view.recurrence,
+    recurrenceUntil: view.recurrenceUntil,
+    customRecurrence: view.customRecurrence,
+    start: view.start,
   });
 
   // Single-date label (shown once, with start & end times beside it)
@@ -667,17 +693,17 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanTitle = draft.title.trim();
+    const cleanTitle = view.title.trim();
     if (!cleanTitle) {
       setValidationError(
-        `Please enter a title for your ${draft.isTask ? 'task' : 'event'}.`
+        `Please enter a title for your ${view.isTask ? 'task' : 'event'}.`
       );
       titleInputRef.current?.focus();
       return;
     }
 
-    const sDate = parseLocalDateTime(draft.start);
-    const eDate = parseLocalDateTime(draft.end);
+    const sDate = parseLocalDateTime(view.start);
+    const eDate = parseLocalDateTime(view.end);
     if (eDate < sDate) {
       setValidationError('End time must be after start time.');
       setScheduleExpanded(true);
@@ -702,14 +728,25 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/55 backdrop-blur-sm"
-        onClick={onClose}
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-[540px] max-h-[92vh] flex flex-col rounded-[28px] border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden"
-        >
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            key="event-form-backdrop"
+            variants={modalBackdropVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/55 backdrop-blur-md"
+            onClick={onClose}
+          >
+            <motion.div
+              variants={modalPanelVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-[540px] max-h-[92vh] flex flex-col rounded-[28px] border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden gpu-layer"
+            >
           {/* Minimalist Google Calendar Top Bar */}
           <div className="px-5 pt-3.5 pb-1 flex items-center justify-between shrink-0">
             <span
@@ -749,7 +786,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               <input
                 ref={titleInputRef}
                 type="text"
-                value={draft.title}
+                value={view.title}
                 onChange={(e) => {
                   setValidationError(null);
                   setDraft((p) => ({ ...p, title: e.target.value }));
@@ -764,7 +801,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   type="button"
                   onClick={() => setDraft((p) => ({ ...p, isTask: false }))}
                   className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm transition-all ${
-                    !draft.isTask
+                    !view.isTask
                       ? 'bg-theme-accent-soft text-theme-accent font-semibold ring-1 ring-theme-accent/35'
                       : 'text-theme-text-secondary hover:bg-theme-cell-hover hover:text-theme-text font-medium'
                   }`}
@@ -775,7 +812,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   type="button"
                   onClick={() => setDraft((p) => ({ ...p, isTask: true }))}
                   className={`px-3.5 py-1.5 rounded-lg text-xs sm:text-sm transition-all ${
-                    draft.isTask
+                    view.isTask
                       ? 'bg-theme-accent-soft text-theme-accent font-semibold ring-1 ring-theme-accent/35'
                       : 'text-theme-text-secondary hover:bg-theme-cell-hover hover:text-theme-text font-medium'
                   }`}
@@ -816,7 +853,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                       {formattedSingleDate}
                     </span>
 
-                    {!draft.allDay && (
+                    {!view.allDay && (
                       <span className="inline-flex items-center gap-1.5">
                         <span
                           onClick={(e) => {
@@ -842,7 +879,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   </div>
 
                   <div className="text-xs text-theme-text-secondary mt-0.5 truncate">
-                    <span>{draft.allDay ? 'All day' : 'Scheduled time'}</span>
+                    <span>{view.allDay ? 'All day' : 'Scheduled time'}</span>
                     <span> · </span>
                     <span
                       onClick={(e) => {
@@ -893,7 +930,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     </button>
 
                     {/* Start & End Time Chips beside the single Date */}
-                    {!draft.allDay && (
+                    {!view.allDay && (
                       <>
                         <div
                           ref={startTimeWrapRef}
@@ -980,20 +1017,20 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   <div className="flex items-center pt-0.5">
                     <div
                       role="checkbox"
-                      aria-checked={draft.allDay}
+                      aria-checked={view.allDay}
                       tabIndex={0}
-                      onClick={() => handleToggleAllDay(!draft.allDay)}
+                      onClick={() => handleToggleAllDay(!view.allDay)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          handleToggleAllDay(!draft.allDay);
+                          handleToggleAllDay(!view.allDay);
                         }
                       }}
                       className="inline-flex items-center gap-3.5 cursor-pointer select-none group py-0.5"
                     >
                       <span
                         style={
-                          draft.allDay
+                          view.allDay
                             ? {
                                 backgroundColor: 'var(--t-accent)',
                                 borderColor: 'var(--t-accent)',
@@ -1002,12 +1039,12 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                             : undefined
                         }
                         className={`w-[18px] h-[18px] rounded-[4px] flex items-center justify-center transition-colors ${
-                          draft.allDay
+                          view.allDay
                             ? ''
                             : 'border-2 border-theme-text-secondary group-hover:border-theme-text bg-transparent'
                         }`}
                       >
-                        {draft.allDay && (
+                        {view.allDay && (
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         )}
                       </span>
@@ -1048,7 +1085,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                       />
                     </button>
 
-                    {draft.recurrence === 'custom' && (
+                    {view.recurrence === 'custom' && (
                       <button
                         type="button"
                         onClick={() => setCustomModalOpen(true)}
@@ -1072,7 +1109,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               <div className="flex-1 min-w-0">
                 <input
                   type="text"
-                  value={draft.location}
+                  value={view.location}
                   onChange={(e) =>
                     setDraft((p) => ({ ...p, location: e.target.value }))
                   }
@@ -1122,7 +1159,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     <textarea
                       ref={descriptionRef}
                       rows={3}
-                      value={draft.description}
+                      value={view.description}
                       onChange={(e) =>
                         setDraft((p) => ({ ...p, description: e.target.value }))
                       }
@@ -1131,7 +1168,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     />
 
                     {/* Attachment Toggle or Panel */}
-                    {!showAttachmentBox && !draft.imageUrl ? (
+                    {!showAttachmentBox && !view.imageUrl ? (
                       <button
                         type="button"
                         onClick={() => setShowAttachmentBox(true)}
@@ -1245,13 +1282,15 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                           </p>
                         )}
 
-                        {draft.imageUrl && (
+                        {view.imageUrl && (
                           <div className="relative rounded-xl overflow-hidden border border-theme-border bg-black/10">
-                            <img
-                              src={draft.imageUrl}
+                            <SkeletonImage
+                              src={view.imageUrl}
                               alt="Attachment preview"
-                              className="w-full max-h-40 object-cover"
-                              onError={() =>
+                              rounded="rounded-none"
+                              className="w-full h-40 bg-black/20"
+                              imgClassName="w-full max-h-40 object-cover"
+                              onErrorImage={() =>
                                 setImageError(
                                   'Unable to load preview from that URL. Check the image address.'
                                 )
@@ -1259,7 +1298,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                             />
                             <div className="flex items-center justify-between gap-2 px-3 py-2 bg-theme-surface/95 border-t border-theme-border">
                               <span className="text-[11px] font-medium text-theme-text-secondary truncate">
-                                {draft.imageName || 'Attached image'}
+                                {view.imageName || 'Attached image'}
                               </span>
                               <button
                                 type="button"
@@ -1347,7 +1386,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {categories.map((cat) => {
-                        const selected = draft.category === cat.id;
+                        const selected = view.category === cat.id;
                         return (
                           <div
                             key={cat.id}
@@ -1379,7 +1418,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (draft.category === cat.id) {
+                                  if (view.category === cat.id) {
                                     setDraft((p) => ({
                                       ...p,
                                       category: 'class-sched',
@@ -1518,10 +1557,10 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
             {/* Bottom Footer Row: Delete (when editing) & Save Pill Button */}
             <div className="pt-4 flex items-center justify-between gap-3">
-              {isEditing && draft.id && onDelete ? (
+              {isEditing && view.id && onDelete ? (
                 <button
                   type="button"
-                  onClick={() => onDelete(draft.id!)}
+                  onClick={() => onDelete(view.id!)}
                   className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -1543,24 +1582,32 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               </button>
             </div>
           </form>
-        </div>
-      </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ====================================================================
           FLOATING GOOGLE CALENDAR–STYLE POPOVERS (Date, Start Time, End Time, Repeat)
           Rendered at fixed viewport coordinates inside the themed tree so they
           never clip or force scrollbars inside the modal card.
          ==================================================================== */}
+      <AnimatePresence>
       {activePicker && popoverCoords && (
-        <div
+        <motion.div
           ref={floatingPopoverRef}
+          variants={popoverVariants}
+          initial="enter"
+          animate="center"
+          exit="exit"
           onClick={(e) => e.stopPropagation()}
           style={{
             top: popoverCoords.top,
             left: popoverCoords.left,
             width: popoverCoords.width,
+            transformOrigin: 'top center',
           }}
-          className="fixed z-[60] rounded-xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden"
+          className="fixed z-[60] rounded-xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden gpu-layer"
         >
           {/* 1. MINI MONTH CALENDAR POPOVER (Screenshot 1) */}
           {activePicker === 'date' && (
@@ -1717,7 +1764,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
           {activePicker === 'repeat' && (
             <div role="listbox" aria-label="Repeat options" className="py-1.5">
               {presetOptions.map((opt) => {
-                const isSelected = draft.recurrence === opt.value;
+                const isSelected = view.recurrence === opt.value;
                 return (
                   <button
                     key={opt.value}
@@ -1749,14 +1796,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               <button
                 type="button"
                 role="option"
-                aria-selected={draft.recurrence === 'custom'}
+                aria-selected={view.recurrence === 'custom'}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setActivePicker(null);
                   setCustomModalOpen(true);
                 }}
                 className={`w-full px-4 py-2 text-left text-sm font-semibold flex items-center justify-between gap-2 transition-colors ${
-                  draft.recurrence === 'custom'
+                  view.recurrence === 'custom'
                     ? 'bg-theme-elevated text-theme-accent'
                     : 'text-theme-accent hover:bg-theme-cell-hover'
                 }`}
@@ -1765,20 +1812,21 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   <SlidersHorizontal className="w-3.5 h-3.5" />
                   Custom...
                 </span>
-                {draft.recurrence === 'custom' && (
+                {view.recurrence === 'custom' && (
                   <Check className="w-4 h-4 shrink-0" />
                 )}
               </button>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Nested Themed Custom Recurrence Dialog */}
       <CustomRecurrenceModal
         isOpen={customModalOpen}
-        startDateStr={draft.start}
-        initialConfig={draft.customRecurrence}
+        startDateStr={view.start}
+        initialConfig={view.customRecurrence}
         onCancel={() => setCustomModalOpen(false)}
         onDone={handleCustomRecurrenceDone}
       />

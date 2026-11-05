@@ -16,6 +16,8 @@ import {
   BrowserPermissionState,
   UpcomingReminderItem,
 } from '../../hooks/useReminderEngine';
+import { AnimatePresence, motion } from 'framer-motion';
+import { menuVariants } from '../../motion/presets';
 
 interface ReminderCenterPopoverProps {
   isOpen: boolean;
@@ -51,12 +53,24 @@ export const ReminderCenterPopover: React.FC<ReminderCenterPopoverProps> = ({
   onTriggerPreviewAlert,
   onScheduleLiveTenMinDemo,
 }) => {
-  if (!isOpen) return null;
-
   return (
+    <AnimatePresence>
+      {isOpen && (
     <>
-      <div className="fixed inset-0 z-30" onClick={onClose} />
-      <div className="absolute right-0 top-full mt-2 z-40 w-[min(92vw,360px)] rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden">
+      <motion.div
+        className="fixed inset-0 z-30"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.div
+        variants={menuVariants}
+        initial="enter"
+        animate="center"
+        exit="exit"
+        style={{ transformOrigin: 'top right' }}
+        className="absolute right-0 top-full mt-2 z-40 w-[min(92vw,360px)] rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden gpu-layer">
         <div
           style={{ backgroundImage: 'var(--t-header-gradient)' }}
           className="px-4 py-3 border-b border-theme-border flex items-center justify-between"
@@ -193,8 +207,10 @@ export const ReminderCenterPopover: React.FC<ReminderCenterPopoverProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     </>
+      )}
+    </AnimatePresence>
   );
 };
 

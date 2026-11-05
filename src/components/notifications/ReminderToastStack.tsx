@@ -3,6 +3,8 @@ import { format } from 'date-fns';
 import { BellRing, ExternalLink, MapPin, X } from 'lucide-react';
 import { ReminderAlert } from '../../types/calendar';
 import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
+import { AnimatePresence, motion } from 'framer-motion';
+import { SkeletonImage } from '../../motion/SkeletonImage';
 
 interface ReminderToastStackProps {
   toasts: ReminderAlert[];
@@ -17,20 +19,24 @@ export const ReminderToastStack: React.FC<ReminderToastStackProps> = ({
   onDismiss,
   onInspectEvent,
 }) => {
-  if (toasts.length === 0) return null;
-
   return (
     <div
       aria-live="polite"
       className="fixed bottom-4 right-4 z-[70] flex flex-col gap-3 w-[min(92vw,380px)] pointer-events-none"
     >
+      <AnimatePresence initial={false}>
       {toasts.map((toast) => {
         const cat = resolveCategoryMeta(toast.category, categoryMap);
         return (
-          <div
+          <motion.div
             key={toast.id}
+            layout
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 24, scale: 0.97, transition: { duration: 0.18 } }}
+            transition={{ type: 'spring', stiffness: 380, damping: 30, mass: 0.8 }}
             style={{ borderLeftColor: cat.color, borderLeftWidth: '5px' }}
-            className="animate-toast-in pointer-events-auto rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden"
+            className="pointer-events-auto rounded-2xl border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg overflow-hidden gpu-layer"
           >
             <div className="p-3.5 flex items-start gap-3">
               <div
@@ -74,13 +80,12 @@ export const ReminderToastStack: React.FC<ReminderToastStackProps> = ({
                 )}
 
                 {toast.imageUrl && (
-                  <div className="mt-2 h-20 w-full rounded-lg overflow-hidden border border-theme-border bg-black/10">
-                    <img
-                      src={toast.imageUrl}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
+                  <SkeletonImage
+                    src={toast.imageUrl}
+                    alt=""
+                    className="mt-2 h-20 w-full border border-theme-border bg-black/10"
+                    imgClassName="w-full h-full object-cover"
+                  />
                 )}
 
                 <div className="mt-2.5 flex items-center gap-2">
@@ -108,9 +113,10 @@ export const ReminderToastStack: React.FC<ReminderToastStackProps> = ({
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         );
       })}
+      </AnimatePresence>
     </div>
   );
 };

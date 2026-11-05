@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDays,
   addMonths,
@@ -60,6 +60,15 @@ import { EventFormModal } from './components/modals/EventFormModal';
 import { EventDetailModal } from './components/modals/EventDetailModal';
 import { ThemeStudioModal } from './components/modals/ThemeStudioModal';
 import { ReminderToastStack } from './components/notifications/ReminderToastStack';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import {
+  NavDirection,
+  VIEW_ORDER,
+  gridSlideVariants,
+  viewSwitchVariants,
+} from './motion/presets';
+import { calendarGridKey } from './motion/navigation';
+import { ThemeCrossFade } from './motion/ThemeTransition';
 
 function makeDefaultDraft(
   date: Date,
@@ -109,6 +118,16 @@ export const App: React.FC = () => {
   const [view, setView] = useState<CalendarView>('week');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+
+  // ---------------------------------------------------------------- motion state
+  /** Which way the calendar last moved, so the grid can slide directionally. */
+  const [navDirection, setNavDirection] = useState<NavDirection>(null);
+  /** Which way the view last zoomed (month → week → day). */
+  const [viewDirection, setViewDirection] = useState<NavDirection>(null);
+  /** Incrementing token that replays the "soaring back to today" pulse. */
+  const [todayPulseToken, setTodayPulseToken] = useState(0);
+  /** Snapshot target for the palette cross-fade overlay. */
+  const appRootRef = useRef<HTMLDivElement | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -288,6 +307,30 @@ export const App: React.FC = () => {
     onOpenEventById: handleOpenEventById,
   });
 
+  const prefersReducedMotion = useReducedMotion();
+  // With reduced motion requested we keep a pure cross-fade (no directional
+  // slide) so the grid change stays perceivable but static.
+  const effectiveNavDirection: NavDirection = prefersReducedMotion
+    ? null
+    : navDirection;
+  const effectiveViewDirection: NavDirection = prefersReducedMotion
+    ? null
+    : viewDirection;
+
+  // Animated view switching (Month <-> Week <-> Day cross-fade + subtle scale)
+  const handleChangeView = useCallback(
+    (nextView: CalendarView) => {
+      setView((prevView) => {
+        if (prevView === nextView) return prevView;
+        setViewDirection(
+          VIEW_ORDER[nextView] > VIEW_ORDER[prevView] ? 'next' : 'prev'
+        );
+        return nextView;
+      });
+    },
+    []
+  );
+
   // Navigation Handlers
   const handleToggleSidebar = useCallback(() => {
     if (window.innerWidth < 1024) {
@@ -298,6 +341,7 @@ export const App: React.FC = () => {
   }, []);
 
   const handleNavigatePrev = useCallback(() => {
+    setNavDirection('prev');
     setCurrentDate((d) => {
       if (view === 'month') return subMonths(d, 1);
       if (view === 'week') return subWeeks(d, 1);
@@ -306,6 +350,7 @@ export const App: React.FC = () => {
   }, [view]);
 
   const handleNavigateNext = useCallback(() => {
+    setNavDirection('next');
     setCurrentDate((d) => {
       if (view === 'month') return addMonths(d, 1);
       if (view === 'week') return addWeeks(d, 1);
@@ -315,8 +360,11 @@ export const App: React.FC = () => {
 
   const handleJumpToday = useCallback(() => {
     const today = new Date();
+    setNavDirection(null);
     setCurrentDate(today);
     setSelectedDate(today);
+    // Replay the landing pulse on the today cell every time (even if already here)
+    setTodayPulseToken((t) => t + 1);
   }, []);
 
   // Keyboard shortcuts (when not typing inside form fields)
@@ -334,9 +382,9 @@ export const App: React.FC = () => {
       }
       if (formModalOpen || selectedOccurrence || themeStudioOpen) return;
 
-      if (e.key === 'm' || e.key === 'M') setView('month');
-      else if (e.key === 'w' || e.key === 'W') setView('week');
-      else if (e.key === 'd' || e.key === 'D') setView('day');
+      if (e.key === 'm' || e.key === 'M') handleChangeView('month');
+      else if (e.key === 'w' || e.key === 'W') handleChangeView('week');
+      else if (e.key === 'd' || e.key === 'D') handleChangeView('day');
       else if (e.key === 't' || e.key === 'T') handleJumpToday();
       else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
@@ -348,6 +396,7 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     formModalOpen,
+    handleChangeView,
     handleJumpToday,
     selectedDate,
     selectedOccurrence,
@@ -558,8 +607,8 @@ export const App: React.FC = () => {
         weekThemes: nextWeeks,
       };
     });
-    setView('month');
-  }, []);
+    handleChangeView('month');
+  }, [handleChangeView]);
 
   const handleClearAllOverrides = useCallback(() => {
     setThemePrefs((prev) => ({
@@ -577,8 +626,9 @@ export const App: React.FC = () => {
 
   return (
     <div
+      ref={appRootRef}
       data-theme={shellResolved.theme}
-      className="h-screen w-screen overflow-hidden flex flex-col bg-theme-bg text-theme-text transition-colors duration-200"
+      className="app-shell h-screen w-screen overflow-hidden flex flex-col bg-theme-bg text-theme-text"
     >
       {/* Top Navigation Bar */}
       <TopNavBar
@@ -594,12 +644,13 @@ export const App: React.FC = () => {
         notificationSettings={notificationSettings}
         upcomingReminders={upcomingReminders}
         onToggleSidebar={handleToggleSidebar}
-        onChangeView={setView}
+        onChangeView={handleChangeView}
         onNavigatePrev={handleNavigatePrev}
         onNavigateNext={handleNavigateNext}
         onJumpToday={handleJumpToday}
         onSearchChange={setSearchQuery}
         onJumpToSearchResult={(occ) => {
+          setNavDirection(null);
           setCurrentDate(occ.start);
           setSelectedDate(occ.start);
           setSelectedOccurrence(occ);
@@ -629,6 +680,7 @@ export const App: React.FC = () => {
           }}
           onSelectMiniDate={(date) => {
             setSelectedDate(date);
+            setNavDirection(null);
             setCurrentDate(date);
           }}
           onToggleCategory={handleToggleCategory}
@@ -639,7 +691,10 @@ export const App: React.FC = () => {
           onApplySplitWeekDemo={() => handleApplySplitWeekDemo(currentDate)}
         />
 
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-3.5 gap-2">
+        <main
+          data-calendar-region
+          className="flex-1 flex flex-col min-w-0 min-h-0 p-2 sm:p-3.5 gap-2"
+        >
           {/* Active Search Filter Pill Banner */}
           {searchQuery.trim() && (
             <div className="shrink-0 flex items-center justify-between gap-2 rounded-xl border border-theme-border bg-theme-surface px-3.5 py-2 text-xs shadow-sm">
@@ -663,8 +718,33 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          {/* Active Calendar Renderer */}
-          <div className="flex-1 min-h-0">
+          {/* Active Calendar Renderer
+              Layer 1 (outer): Month <-> Week <-> Day cross-fade + subtle scale.
+              Layer 2 (inner): directional slide for Next / Previous / Today.
+              Both layers are absolutely positioned inside a fixed-size stage so
+              the surrounding layout never shifts while views recalculate. */}
+          <div className="flex-1 min-h-0 relative overflow-hidden">
+            <AnimatePresence initial={false} custom={effectiveViewDirection}>
+              <motion.div
+                key={view}
+                custom={effectiveViewDirection}
+                variants={viewSwitchVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                className="absolute inset-0 gpu-layer"
+                style={{ transformOrigin: 'center center' }}
+              >
+                <AnimatePresence initial={false} custom={effectiveNavDirection}>
+                  <motion.div
+                    key={calendarGridKey(currentDate, view)}
+                    custom={effectiveNavDirection}
+                    variants={gridSlideVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    className="absolute inset-0 gpu-layer"
+                  >
             {view === 'month' && (
               <MonthView
                 currentDate={currentDate}
@@ -679,11 +759,12 @@ export const App: React.FC = () => {
                 }}
                 onSelectOccurrence={(occ) => setSelectedOccurrence(occ)}
                 onToggleTaskComplete={handleToggleTaskComplete}
+                todayPulseToken={todayPulseToken}
                 onAssignWeekTheme={handleSetWeekTheme}
                 onJumpToDayView={(date) => {
                   setSelectedDate(date);
                   setCurrentDate(date);
-                  setView('day');
+                  handleChangeView('day');
                 }}
               />
             )}
@@ -695,6 +776,7 @@ export const App: React.FC = () => {
                 occurrences={expandedOccurrences}
                 categoryMap={categoryMap}
                 activeTheme={shellResolved.theme}
+                todayPulseToken={todayPulseToken}
                 onSelectDate={setSelectedDate}
                 onCreateAtSlot={(date, hour, minute, allDay) => {
                   setActiveDraft(makeDefaultDraft(date, hour, minute, allDay));
@@ -705,7 +787,7 @@ export const App: React.FC = () => {
                 onJumpToDayView={(date) => {
                   setSelectedDate(date);
                   setCurrentDate(date);
-                  setView('day');
+                  handleChangeView('day');
                 }}
               />
             )}
@@ -716,6 +798,7 @@ export const App: React.FC = () => {
                 occurrences={expandedOccurrences}
                 categoryMap={categoryMap}
                 activeTheme={shellResolved.theme}
+                todayPulseToken={todayPulseToken}
                 onCreateAtSlot={(date, hour, minute, allDay) => {
                   setActiveDraft(makeDefaultDraft(date, hour, minute, allDay));
                   setFormModalOpen(true);
@@ -724,6 +807,10 @@ export const App: React.FC = () => {
                 onToggleTaskComplete={handleToggleTaskComplete}
               />
             )}
+                  </motion.div>
+                </AnimatePresence>
+              </motion.div>
+            </AnimatePresence>
           </div>
         </main>
       </div>
@@ -774,6 +861,9 @@ export const App: React.FC = () => {
           handleOpenEventById(eventId);
         }}
       />
+
+      {/* Soft palette cross-fade between full surface themes */}
+      <ThemeCrossFade theme={shellResolved.theme} targetRef={appRootRef} />
     </div>
   );
 };

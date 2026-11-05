@@ -11,6 +11,11 @@ import {
   makeDefaultCustomRecurrence,
   parseLocalDateTime,
 } from '../../utils/calendarMath';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  modalBackdropVariants,
+  modalPanelVariants,
+} from '../../motion/presets';
 
 interface CustomRecurrenceModalProps {
   isOpen: boolean;
@@ -112,8 +117,6 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [unitMenuOpen]);
 
-  if (!isOpen) return null;
-
   const parsedInterval = Math.max(1, Math.min(999, parseInt(intervalText, 10) || 1));
   const parsedOccurrences = Math.max(
     1,
@@ -186,16 +189,27 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
   );
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm"
+    <AnimatePresence>
+      {isOpen && (
+    <motion.div
+      key="custom-recurrence-backdrop"
+      variants={modalBackdropVariants}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/55 backdrop-blur-md"
       onClick={onCancel}
     >
-      <div
+      <motion.div
         role="dialog"
         aria-modal="true"
         aria-labelledby="custom-recurrence-title"
+        variants={modalPanelVariants}
+        initial="enter"
+        animate="center"
+        exit="exit"
         onClick={(e) => e.stopPropagation()}
-        className="w-[min(92vw,390px)] rounded-[28px] border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg p-6 sm:p-7 select-none"
+        className="w-[min(92vw,390px)] rounded-[28px] border border-theme-border bg-theme-surface text-theme-text shadow-theme-lg p-6 sm:p-7 select-none gpu-layer"
       >
         {/* Title */}
         <h3
@@ -492,7 +506,9 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
             Done
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
