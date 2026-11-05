@@ -64,10 +64,10 @@ export const WeekView: React.FC<WeekViewProps> = ({
   return (
     <div
       data-theme={activeTheme}
-      className="flex flex-col h-full min-h-0 bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden"
+      className="gothic-frame flex flex-col h-full min-h-0 bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden"
     >
       {/* Sticky Day Column Headers */}
-      <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] sm:grid-cols-[68px_repeat(7,minmax(0,1fr))] border-b border-theme-border bg-theme-elevated shrink-0">
+      <div className="calendar-header-band grid grid-cols-[56px_repeat(7,minmax(0,1fr))] sm:grid-cols-[68px_repeat(7,minmax(0,1fr))] border-b border-theme-border bg-theme-elevated shrink-0">
         <div className="p-2 flex items-end justify-center text-[10px] font-semibold text-theme-text-muted border-r border-theme-border">
           GMT
         </div>

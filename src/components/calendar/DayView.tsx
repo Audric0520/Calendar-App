@@ -102,7 +102,7 @@ export const DayView: React.FC<DayViewProps> = ({
       className="flex gap-4 h-full min-h-0"
     >
       {/* Main Interactive Day Timeline */}
-      <div className="flex-1 flex flex-col min-w-0 bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden">
+      <div className="gothic-frame flex-1 flex flex-col min-w-0 bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden">
         {/* Day Banner Header */}
         <div
           style={{ backgroundImage: 'var(--t-header-gradient)' }}
@@ -168,7 +168,7 @@ export const DayView: React.FC<DayViewProps> = ({
         </div>
 
         {/* All-Day Banner */}
-        <div className="grid grid-cols-[68px_minmax(0,1fr)] border-b border-theme-border bg-theme-cell-muted/65 shrink-0">
+        <div className="calendar-header-band grid grid-cols-[68px_minmax(0,1fr)] border-b border-theme-border bg-theme-cell-muted/65 shrink-0">
           <div className="px-2 py-2 flex items-center justify-center text-[10px] font-semibold text-theme-text-muted border-r border-theme-border">
             All-day
           </div>
@@ -289,7 +289,7 @@ export const DayView: React.FC<DayViewProps> = ({
       </div>
 
       {/* Right Day Agenda & Multimedia Digest (Desktop XL) */}
-      <aside className="hidden xl:flex w-80 shrink-0 flex-col bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden">
+      <aside className="gothic-frame hidden xl:flex w-80 shrink-0 flex-col bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden">
         <div className="p-4 border-b border-theme-border bg-theme-elevated">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-theme-accent">
             <Sparkles className="w-3.5 h-3.5" />

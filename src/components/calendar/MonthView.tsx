@@ -69,13 +69,13 @@ export const MonthView: React.FC<MonthViewProps> = ({
 
   return (
     <div
-      className="flex flex-col h-full min-h-0 bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden"
+      className="gothic-frame flex flex-col h-full min-h-0 bg-theme-surface rounded-2xl border border-theme-border shadow-theme overflow-hidden"
       onClick={() => {
         if (openWeekPickerKey) setOpenWeekPickerKey(null);
       }}
     >
       {/* Weekday column header */}
-      <div className="grid grid-cols-7 border-b border-theme-border bg-theme-elevated/85 shrink-0">
+      <div className="calendar-header-band grid grid-cols-7 border-b border-theme-border bg-theme-elevated/85 shrink-0">
         {WEEKDAY_HEADERS.map((dayName) => (
           <div
             key={dayName}

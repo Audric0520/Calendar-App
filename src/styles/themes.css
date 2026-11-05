@@ -126,43 +126,194 @@
   color-scheme: dark;
 }
 
-/* 6. WEDNESDAY (Addams / Nevermore) — Gothic monochromatic dark, violet/burgundy, stained glass */
+/* 6. WEDNESDAY (Addams / Nevermore) — Monochrome gothic: ink-black plaster,
+   bone/ash type, silver hairline leading, and candlelight as the only warmth.
+   Palette sampled directly from the Wednesday mood-board references:
+   obsidian #060609–#17171e, pale plaster #f2efe8, ember #c98a5a. */
 [data-theme='wednesday'] {
   --t-is-dark: 1;
-  --t-bg-primary: #08080d;
-  --t-bg-surface: #111019;
-  --t-bg-elevated: #1a1827;
-  --t-bg-cell: #0d0c14;
-  --t-bg-cell-muted: #08070d;
-  --t-bg-cell-hover: #1b172b;
-  --t-bg-today: #241634;
-  --t-border: #2e2942;
-  --t-border-strong: #7c3aed;
-  --t-text-primary: #ede9fe;
-  --t-text-secondary: #b4add0;
-  --t-text-muted: #756e94;
-  --t-accent: #7c3aed;
-  --t-accent-hover: #6d28d9;
-  --t-accent-soft: rgba(124, 58, 237, 0.22);
-  --t-accent-contrast: #ffffff;
-  --t-accent-2: #9f1239;
-  --t-accent-3: #4c1d95;
-  --t-shadow: 0 6px 22px -4px rgba(0, 0, 0, 0.65);
-  --t-shadow-lg: 0 22px 50px -10px rgba(0, 0, 0, 0.82);
+
+  /* Surfaces — deep plaster-black, layered like a candlelit room */
+  --t-bg-primary: #060609;
+  --t-bg-surface: #0f0f14;
+  --t-bg-elevated: #17171e;
+  --t-bg-cell: #0b0b0f;
+  --t-bg-cell-muted: #07070a;
+  --t-bg-cell-hover: #1b1b23;
+  --t-bg-today: #211d17;
+
+  /* Lines — silver "leaded glass" hairlines (2.68:1 on the cell fill, 2.47:1 on
+     the today wash, so grid lines stay crisp without ever glowing violet) */
+  --t-border: #555563;
+  --t-border-strong: #cfc9bf;
+
+  /* Type — bone / ash / weathered granite */
+  --t-text-primary: #f2efe8;
+  --t-text-secondary: #bcb7ad;
+  --t-text-muted: #8b867c;
+
+  /* Accent — candle-lit bone. Inverted from the old violet: active pills and
+     the Today button are now bone-white with near-black type, the single
+     high-contrast "candle" moment in an otherwise monochrome UI. */
+  --t-accent: #e6e1d7;
+  --t-accent-hover: #f4f1ea;
+  --t-accent-soft: rgba(230, 225, 215, 0.14);
+  --t-accent-contrast: #0a0a0d;
+  --t-accent-2: #c98a5a;
+  --t-accent-3: #8b8579;
+
+  --t-shadow: 0 6px 22px -4px rgba(0, 0, 0, 0.72);
+  --t-shadow-lg: 0 22px 50px -10px rgba(0, 0, 0, 0.88);
+
+  /* Header band — faint candle glow falling from the top of the panel */
   --t-header-gradient: linear-gradient(
     135deg,
-    #12101c 0%,
-    #1d152c 50%,
-    #1b0e18 100%
+    #101015 0%,
+    #16161d 48%,
+    #1a1712 100%
   );
+
+  /* Cell wash — cold ash falloff plus a barely-there ember breath at the base */
   --t-cell-overlay: radial-gradient(
-    circle at 50% 0%,
-    rgba(124, 58, 237, 0.08),
-    rgba(159, 18, 57, 0.04) 55%,
-    transparent 80%
-  );
-  --t-font-display: Georgia, 'Times New Roman', serif;
+      circle at 50% 0%,
+      rgba(242, 239, 232, 0.035),
+      transparent 62%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(201, 138, 90, 0) 55%,
+      rgba(201, 138, 90, 0.035) 100%
+    );
+
+  --t-font-display: Georgia, 'Times New Roman', 'Iowan Old Style', serif;
   color-scheme: dark;
+}
+
+/* ----------------------------------------------------------------------------
+   WEDNESDAY ATMOSPHERE LAYER
+   Version-pinned grain, gothic arched framing and smoked-glass panels. Every
+   rule is scoped to `[data-theme='wednesday']`, so the other three themes are
+   untouched even though they share the same component classes.
+   ---------------------------------------------------------------------------- */
+
+/* Gothic arch: the calendar card, sidebar and modals share `.gothic-frame`,
+   which this theme caps with a softly pointed arch and a bone keyline. */
+[data-theme='wednesday'] .gothic-frame,
+[data-theme='wednesday'] .gothic-frame-arch {
+  position: relative;
+  border-radius: 1.15rem 1.15rem 0.75rem 0.75rem;
+}
+
+[data-theme='wednesday'] .gothic-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(242, 239, 232, 0.06),
+    inset 0 1px 0 0 rgba(242, 239, 232, 0.12);
+}
+
+/* Smoked-glass panel treatment for popovers / elevated cards */
+[data-theme='wednesday'] .gothic-panel {
+  background-image: linear-gradient(
+    180deg,
+    rgba(242, 239, 232, 0.045) 0%,
+    rgba(242, 239, 232, 0.012) 40%,
+    rgba(0, 0, 0, 0.22) 100%
+  );
+  box-shadow: inset 0 1px 0 0 rgba(242, 239, 232, 0.09),
+    0 10px 28px -12px rgba(0, 0, 0, 0.85);
+}
+
+/* Typewriter-letterpress display type: bone ink with a hairline engraved edge */
+[data-theme='wednesday'] .gothic-display {
+  font-family: var(--t-font-display);
+  letter-spacing: 0.035em;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85), 0 0 18px rgba(242, 239, 232, 0.12);
+}
+
+/* Extra breathing room on the letterpress headings so the engraved shadow
+   never collides with tight tracking utilities */
+[data-theme='wednesday'] .gothic-display {
+  font-family: var(--t-font-display);
+  letter-spacing: 0.045em;
+}
+
+/* Bone focus ring: keyboard focus stays visible on ink-black surfaces */
+[data-theme='wednesday'] :focus-visible {
+  outline: 2px solid rgba(230, 225, 215, 0.75);
+  outline-offset: 2px;
+}
+
+/* Text selection reads as candle-lit parchment */
+[data-theme='wednesday'] ::selection {
+  background-color: rgba(201, 138, 90, 0.35);
+  color: #f2efe8;
+}
+
+/* Shell: a cold plaster-to-ink fall with the candle vignette layered on top, so
+   the whole app reads like the mood-board frames rather than a flat dark card */
+[data-theme='wednesday'].app-shell {
+  background-image: radial-gradient(
+      ellipse 110% 70% at 50% -8%,
+      rgba(242, 239, 232, 0.055),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 90% 55% at 50% 112%,
+      rgba(201, 138, 90, 0.07),
+      transparent 66%
+    ),
+    linear-gradient(180deg, #0a0a0e 0%, #060609 55%, #08070b 100%);
+}
+
+/* Top bar: smoked-glass keyline replacing the plain hairline divider */
+[data-theme='wednesday'] .app-topbar {
+  border-bottom-color: rgba(207, 201, 191, 0.22);
+  background-image: linear-gradient(
+    180deg,
+    rgba(242, 239, 232, 0.05) 0%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
+  box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.7), 0 10px 26px -20px rgba(0, 0, 0, 1);
+}
+
+/* Sidebar column: ink panel with a bone leading edge down its right side */
+[data-theme='wednesday'] .sidebar-shell {
+  background-image: linear-gradient(
+    180deg,
+    rgba(242, 239, 232, 0.03) 0%,
+    rgba(0, 0, 0, 0.18) 100%
+  );
+}
+
+/* Weekday / day-name header bands: bone keyline underline instead of a plain rule */
+[data-theme='wednesday'] .calendar-header-band {
+  background-image: linear-gradient(
+    180deg,
+    rgba(242, 239, 232, 0.055) 0%,
+    rgba(242, 239, 232, 0.012) 100%
+  );
+  border-bottom-color: rgba(207, 201, 191, 0.42);
+}
+
+/* Sidebar filter chips + tag rows: candle-lit selected states */
+[data-theme='wednesday'] .gothic-panel {
+  border-color: rgba(207, 201, 191, 0.16);
+}
+
+/* Candle underline used by headers and section rules */
+[data-theme='wednesday'] .gothic-rule {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(207, 201, 191, 0.55) 18%,
+    rgba(201, 138, 90, 0.75) 50%,
+    rgba(207, 201, 191, 0.55) 82%,
+    transparent 100%
+  );
+  height: 1px;
 }
 
 /* ============================================================================
@@ -232,10 +383,12 @@
   );
 }
 
-/* Wednesday Week Signature: Stained-glass leaded gothic arch & violet/burgundy trim */
+/* Wednesday Week Signature: candle-lit silver keyline & weathered plaster wash.
+   The old violet→black→burgundy lead bar is replaced by a bone hairline rail
+   that fades through ember at its centre, echoing the mood-board candlelight. */
 .week-row-scope[data-theme='wednesday'] {
-  box-shadow: inset 0 1px 0 0 rgba(124, 58, 237, 0.28),
-    inset 0 -1px 0 0 rgba(159, 18, 57, 0.28);
+  box-shadow: inset 0 1px 0 0 rgba(242, 239, 232, 0.09),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.72);
 }
 .week-row-scope[data-theme='wednesday']::before {
   content: '';
@@ -246,19 +399,25 @@
   width: 5px;
   z-index: 5;
   pointer-events: none;
-  background: linear-gradient(to bottom, #7c3aed 0%, #18181b 50%, #9f1239 100%);
+  background: linear-gradient(
+    to bottom,
+    #cfc9bf 0%,
+    #c98a5a 45%,
+    #0a0a0d 72%,
+    #3a3a45 100%
+  );
 }
 .week-row-scope[data-theme='wednesday'] > .week-cells-grid > .calendar-day-cell {
   background-image: radial-gradient(
       circle at 50% 0%,
-      rgba(124, 58, 237, 0.09),
-      transparent 65%
+      rgba(242, 239, 232, 0.05),
+      transparent 66%
     ),
     linear-gradient(
-      135deg,
-      rgba(255, 255, 255, 0.02) 0%,
-      transparent 35%,
-      rgba(159, 18, 57, 0.04) 100%
+      180deg,
+      rgba(255, 255, 255, 0.014) 0%,
+      transparent 42%,
+      rgba(201, 138, 90, 0.04) 100%
     );
 }
 

@@ -62,14 +62,14 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
     name: 'Wednesday (Nevermore)',
     shortName: 'Wednesday',
     group: 'Wednesday',
-    tagline: 'Obsidian gothic & stained glass',
+    tagline: 'Monochrome gothic & candlelight',
     description:
-      'Monochromatic obsidian & charcoal dark mode with Nevermore dark violet, burgundy accents, and stained-glass framing.',
+      'Ink-black Nevermore plaster with bone-white letterpress type, silver leading on every rule, and candlelight as the only warmth.',
     isDark: true,
-    swatches: ['#0f0e17', '#7c3aed', '#9f1239'],
-    badgeBg: '#1e1630',
-    badgeText: '#ddd6fe',
-    badgeBorder: '#7c3aed',
+    swatches: ['#0b0b0f', '#e6e1d7', '#c98a5a'],
+    badgeBg: '#1b1b23',
+    badgeText: '#f2efe8',
+    badgeBorder: '#cfc9bf',
   },
 };
 
