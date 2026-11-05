@@ -388,7 +388,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-theme-surface text-theme-text select-none">
+    <div className="sidebar-shell flex flex-col h-full bg-theme-surface text-theme-text select-none">
       {/* Create Button + Mobile Close */}
       <div className="p-4 flex items-center justify-between gap-2 shrink-0">
         <button
@@ -419,7 +419,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="flex-1 overflow-y-auto themed-scroll px-4 pb-5 space-y-5">
         {/* Collapsible Mini-Month Date Picker */}
-        <section className="rounded-2xl border border-theme-border bg-theme-elevated/60 p-3">
+        <section className="gothic-panel rounded-2xl border border-theme-border bg-theme-elevated/60 p-3">
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -523,7 +523,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </section>
 
         {/* Quick Multi-Theme Engine Controls */}
-        <section className="rounded-2xl border border-theme-border bg-theme-elevated/60 p-3 space-y-2.5">
+        <section className="gothic-panel rounded-2xl border border-theme-border bg-theme-elevated/60 p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-theme-text">
               <Palette className="w-3.5 h-3.5 text-theme-accent" />
@@ -578,7 +578,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Calendar Filters — Events and Tasks are listed separately so the
             user can untick entire item types or individual tags */}
-        <section className="rounded-2xl border border-theme-border bg-theme-elevated/60 p-3 space-y-2.5">
+        <section className="gothic-panel rounded-2xl border border-theme-border bg-theme-elevated/60 p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <button
               type="button"

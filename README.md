@@ -23,7 +23,9 @@ Scoped CSS Custom Properties (`[data-theme="..."]`) allow **Global**, **Per-Mont
 - **Kamen Rider OOO (`ooo`):**
   - Metallic Greeed dark chrome surfaces, O-Scanner gold rims, and Tatoba (Taka Red / Tora Yellow / Batta Green) Core Medal badges.
 - **Wednesday (`wednesday`):**
-  - Addams / Nevermore gothic obsidian & charcoal dark mode with dark violet/burgundy accents and stained-glass window framing.
+  - Nevermore monochrome gothic: ink-black plaster surfaces (`#060609`→`#17171e`), bone-white letterpress type (`#f2efe8`), silver *leaded-glass* hairlines (`#555563`, 2.68:1 on the cell fill), and candlelight as the only warmth (`#c98a5a`) — the old violet/burgundy accent is gone.
+  - Atmosphere is scoped to `[data-theme='wednesday']` only: an arched `.gothic-frame` card silhouette with an inner bone keyline, smoked-glass `.gothic-panel` sidebar sections, letterpress `.gothic-display` headings, a candle underline `.gothic-rule`, bone focus rings, and an ember-tinted text selection. Week rows carry a bone→ember hairline rail instead of the violet→burgundy lead bar. Active pills, the Today button and the current view toggle invert to bone-on-ink.
+  - The theme emblem is now an ash medallion with a bone spiderweb and a single ember dot, and the badge glow is warm bone rather than violet.
 
 ### 3. Multimedia Support
 - Attach `PNG`, `JPG`, or `WebP` images via drag-and-drop / file picker (`FileReader` + smart canvas optimization) or paste an external image URL.

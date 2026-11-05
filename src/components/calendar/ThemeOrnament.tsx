@@ -1,4 +1,5 @@
 import React from 'react';
+import wednesdayLogoUrl from '../../assets/wednesday-logo.png?url';
 import { ThemeId } from '../../types/calendar';
 
 interface ThemeOrnamentProps {
@@ -76,27 +77,28 @@ export const ThemeOrnament: React.FC<ThemeOrnamentProps> = ({
       );
 
     case 'wednesday':
-      // Nevermore Stained-Glass Spiderweb Window Emblem
+      // Nevermore stained-glass "W" medallion — supplied artwork, rendered at the
+      // exact same square footprint the previous SVG ornament occupied, so every
+      // call site (top bar 15px, week badges 12–13px, theme studio 18px) keeps
+      // its original dimensions and layout rhythm.
       return (
-        <svg
+        <img
+          src={wednesdayLogoUrl}
           width={size}
           height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          className={className}
+          alt=""
           aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="9.5" fill="#14111f" stroke="#7c3aed" strokeWidth="1.7" />
-          <path d="M12 2.5A9.5 9.5 0 0 1 21.5 12H12V2.5Z" fill="#6d28d9" fillOpacity="0.5" />
-          <path d="M12 12H21.5A9.5 9.5 0 0 1 12 21.5V12Z" fill="#9f1239" fillOpacity="0.45" />
-          <circle cx="12" cy="12" r="5.2" stroke="#ddd6fe" strokeWidth="1" strokeOpacity="0.7" />
-          <path
-            d="M12 2.5V21.5M2.5 12H21.5M5.3 5.3L18.7 18.7M18.7 5.3L5.3 18.7"
-            stroke="#c4b5fd"
-            strokeWidth="1"
-            strokeOpacity="0.75"
-          />
-        </svg>
+          draggable={false}
+          className={className}
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            display: 'block',
+            objectFit: 'contain',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}
+        />
       );
   }
 };

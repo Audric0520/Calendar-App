@@ -215,7 +215,7 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
         <h3
           id="custom-recurrence-title"
           style={{ fontFamily: 'var(--t-font-display)' }}
-          className="text-xl sm:text-[22px] font-semibold tracking-tight text-theme-text"
+          className="gothic-display text-xl sm:text-[22px] font-semibold tracking-tight text-theme-text"
         >
           Custom recurrence
         </h3>
