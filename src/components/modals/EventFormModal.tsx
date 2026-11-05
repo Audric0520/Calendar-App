@@ -133,7 +133,10 @@ function parseFlexibleTimeToMinutes(raw: string): number | null {
 }
 
 function formatDurationLabel(diffMins: number): string {
-  if (diffMins <= 0) return '0 mins';
+  // Start and end are independent, so a range can temporarily be inverted or
+  // empty. Label it honestly rather than showing a misleading "0 mins".
+  if (diffMins < 0) return 'before start';
+  if (diffMins === 0) return '0 mins';
   if (diffMins < 60) return diffMins === 1 ? '1 min' : `${diffMins} mins`;
   if (diffMins === 60) return '1 hr';
   if (diffMins % 30 === 0) return `${diffMins / 60} hrs`;
@@ -154,34 +157,48 @@ function buildStartTimeOptions(currentStartMins: number): number[] {
   return list;
 }
 
+/**
+ * End-time choices for a given start.
+ *
+ * Only times that are strictly AFTER the start are valid, so the list always
+ * begins below the start (e.g. a 1:00pm start can never offer 11:00am or 7:30am).
+ * The cadence matches the start picker for the first hour (every 15 min) and
+ * settles into half-hour steps after that, which keeps a 24-hour day listable
+ * without thousands of rows.
+ *
+ * A currently stored end time is only surfaced when it is itself valid — an
+ * inverted range must not smuggle an earlier time back into the list; it is left
+ * to `handleSubmit` to report.
+ */
 function buildEndTimeOptions(
   startMins: number,
   currentEndMins: number
 ): { mins: number; durationLabel: string }[] {
+  const END_OF_DAY = 24 * 60 - 1;
+  const safeStart = Math.max(0, Math.min(END_OF_DAY, startMins));
+
   const minsSet = new Set<number>();
-  const quarterSteps = [0, 15, 30, 45, 60];
-  for (const offset of quarterSteps) {
-    const candidate = startMins + offset;
-    if (candidate < 24 * 60) {
-      minsSet.add(candidate);
-    }
+  for (const offset of [15, 30, 45, 60]) {
+    const candidate = safeStart + offset;
+    if (candidate <= END_OF_DAY) minsSet.add(candidate);
   }
-  for (let offset = 90; startMins + offset < 24 * 60; offset += 30) {
-    minsSet.add(startMins + offset);
+  for (let offset = 90; safeStart + offset <= END_OF_DAY; offset += 30) {
+    minsSet.add(safeStart + offset);
   }
-  if (currentEndMins >= startMins && currentEndMins < 24 * 60) {
+
+  // Keep the draft's own end visible, but only when it obeys the same rule.
+  if (currentEndMins > safeStart && currentEndMins <= END_OF_DAY) {
     minsSet.add(currentEndMins);
   }
-  if (minsSet.size <= 1 && startMins < 23 * 60 + 59) {
-    minsSet.add(23 * 60 + 59);
+
+  // Edge case: a start at 23:45+ leaves no room for a later end on this day.
+  if (minsSet.size === 0 && safeStart < END_OF_DAY) {
+    minsSet.add(END_OF_DAY);
   }
 
   return Array.from(minsSet)
     .sort((a, b) => a - b)
-    .map((m) => ({
-      mins: m,
-      durationLabel: formatDurationLabel(m - startMins),
-    }));
+    .map((m) => ({ mins: m, durationLabel: formatDurationLabel(m - safeStart) }));
 }
 
 export const EventFormModal: React.FC<EventFormModalProps> = ({
@@ -247,6 +264,13 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   const repeatChipRef = useRef<HTMLButtonElement | null>(null);
   const floatingPopoverRef = useRef<HTMLDivElement | null>(null);
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
+  /**
+   * Set while a time value is being written programmatically (dropdown pick or
+   * start/end sync). The chips call `input.blur()`, which fires `onBlur` while
+   * `startTimeText`/`endTimeText` still hold the *previous* string — committing
+   * that stale text would immediately overwrite the value that was just set.
+   */
+  const suppressTimeBlurCommitRef = useRef(false);
 
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -550,40 +574,53 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
   const applyStartMinutes = (newStartMins: number) => {
     setValidationError(null);
-    const prevDuration = Math.max(0, endMinutes - startMinutes);
-    const fallbackDuration = prevDuration > 0 ? prevDuration : 60;
-    const nextEndMins = Math.min(23 * 60 + 59, newStartMins + fallbackDuration);
+    const safeStart = Math.max(0, Math.min(23 * 60 + 59, newStartMins));
 
-    lastTimedRangeRef.current = {
-      startMins: newStartMins,
-      endMins: nextEndMins,
-    };
+    // Start and end are edited independently: changing the start must never
+    // move the end (and vice versa). An inverted range is surfaced on Save by
+    // `handleSubmit` ("End time must be after start time") instead of being
+    // silently repaired here, because silently repairing it is exactly what
+    // made picking a start time overwrite the user's chosen end time.
+    lastTimedRangeRef.current = { startMins: safeStart, endMins: endMinutes };
+
+    // Guard the end chip: the start text is written programmatically below, so
+    // a blur on the end input while this is in flight must not commit stale text.
+    suppressTimeBlurCommitRef.current = true;
 
     setDraft((prev) => ({
       ...prev,
-      start: `${dateStr}T${minutesToHHmm(newStartMins)}`,
-      end: `${dateStr}T${minutesToHHmm(nextEndMins)}`,
+      start: `${dateStr}T${minutesToHHmm(safeStart)}`,
     }));
-    setStartTimeText(formatMinutes12h(newStartMins));
-    setEndTimeText(formatMinutes12h(nextEndMins));
+    setStartTimeText(formatMinutes12h(safeStart));
+    window.setTimeout(() => {
+      suppressTimeBlurCommitRef.current = false;
+    }, 0);
   };
 
   const applyEndMinutes = (newEndMins: number) => {
     setValidationError(null);
     const safeEnd = Math.max(0, Math.min(23 * 60 + 59, newEndMins));
+
+    // Independent of the start time — see `applyStartMinutes`.
     lastTimedRangeRef.current = {
-      startMins: startMinutes,
-      endMins: Math.max(startMinutes, safeEnd),
+      startMins: Math.min(startMinutes, 23 * 60 + 59),
+      endMins: safeEnd,
     };
+
+    suppressTimeBlurCommitRef.current = true;
 
     setDraft((prev) => ({
       ...prev,
       end: `${dateStr}T${minutesToHHmm(safeEnd)}`,
     }));
     setEndTimeText(formatMinutes12h(safeEnd));
+    window.setTimeout(() => {
+      suppressTimeBlurCommitRef.current = false;
+    }, 0);
   };
 
   const commitTypedStartTime = () => {
+    if (suppressTimeBlurCommitRef.current) return;
     const parsed = parseFlexibleTimeToMinutes(startTimeText);
     if (parsed === null) {
       setStartTimeText(formatMinutes12h(startMinutes));
@@ -593,6 +630,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   };
 
   const commitTypedEndTime = () => {
+    if (suppressTimeBlurCommitRef.current) return;
     const parsed = parseFlexibleTimeToMinutes(endTimeText);
     if (parsed === null) {
       setEndTimeText(formatMinutes12h(endMinutes));
@@ -605,10 +643,9 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     setValidationError(null);
     setActivePicker(null);
     if (checked) {
-      lastTimedRangeRef.current = {
-        startMins: startMinutes,
-        endMins: Math.max(startMinutes, endMinutes),
-      };
+      // Remember the range verbatim so toggling All day off restores exactly the
+      // times the user had chosen — no silent reordering of start/end.
+      lastTimedRangeRef.current = { startMins: startMinutes, endMins: endMinutes };
       setDraft((prev) => ({
         ...prev,
         allDay: true,
@@ -625,6 +662,37 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       }));
     }
   };
+
+  /**
+   * Applies a time chosen from somewhere other than the text input itself.
+   *
+   * The commit must not be undone by the input's own `onBlur`: `apply()` calls
+   * `setStartTimeText`/`setEndTimeText`, but `onBlur` reads whatever string is
+   * still captured in this render's closure — the *old* time — and would write
+   * that straight back into the draft. So the blur guard stays raised for the
+   * synchronous blur below and is released on the next tick, leaving normal
+   * typing-then-clicking-away commits untouched.
+   */
+  const pickTime = (
+    minutes: number,
+    apply: (mins: number) => void,
+    inputRef: React.RefObject<HTMLInputElement>
+  ) => {
+    if (suppressTimeBlurCommitRef.current) return; // already handled this gesture
+    suppressTimeBlurCommitRef.current = true;
+    apply(minutes);
+    setActivePicker(null);
+    inputRef.current?.blur();
+    window.setTimeout(() => {
+      suppressTimeBlurCommitRef.current = false;
+    }, 0);
+  };
+
+  const handlePickStartTime = (minutes: number) =>
+    pickTime(minutes, applyStartMinutes, startTimeInputRef);
+
+  const handlePickEndTime = (minutes: number) =>
+    pickTime(minutes, applyEndMinutes, endTimeInputRef);
 
   const openScheduleWithPicker = (picker: ActiveSchedulePicker) => {
     setScheduleExpanded(true);
@@ -1719,8 +1787,13 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     <button
                       key={day.toISOString()}
                       type="button"
-                      onMouseDown={(e) => {
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return;
                         e.preventDefault();
+                        handleSelectSingleDate(day);
+                      }}
+                      onClick={(e) => {
+                        if (e.button !== 0) return;
                         handleSelectSingleDate(day);
                       }}
                       style={
@@ -1765,11 +1838,21 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     type="button"
                     role="option"
                     aria-selected={isSelected}
-                    onMouseDown={(e) => {
+                    // Left-click is applied on `onPointerDown` (covers mouse, pen
+                    // and touch) so the choice lands before the input can blur.
+                    // `preventDefault` keeps focus inside the input so the picker
+                    // does not close underneath the click. Keyboard activation is
+                    // handled by `onClick`, which also fires for synthetic clicks
+                    // (assistive tech) and for left-button clicks if a pointerdown
+                    // was swallowed by a browser gesture.
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
                       e.preventDefault();
-                      applyStartMinutes(mins);
-                      setActivePicker(null);
-                      startTimeInputRef.current?.blur();
+                      handlePickStartTime(mins);
+                    }}
+                    onClick={(e) => {
+                      if (e.button !== 0) return;
+                      handlePickStartTime(mins);
                     }}
                     className={`w-full px-4 py-2.5 text-left text-sm tabular-nums transition-colors ${
                       isSelected
@@ -1800,11 +1883,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     type="button"
                     role="option"
                     aria-selected={isSelected}
-                    onMouseDown={(e) => {
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
                       e.preventDefault();
-                      applyEndMinutes(mins);
-                      setActivePicker(null);
-                      endTimeInputRef.current?.blur();
+                      handlePickEndTime(mins);
+                    }}
+                    onClick={(e) => {
+                      if (e.button !== 0) return;
+                      handlePickEndTime(mins);
                     }}
                     className={`w-full px-4 py-2.5 text-left text-sm tabular-nums transition-colors ${
                       isSelected
@@ -1830,8 +1916,17 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     type="button"
                     role="option"
                     aria-selected={isSelected}
-                    onMouseDown={(e) => {
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
                       e.preventDefault();
+                      setDraft((p) => ({
+                        ...p,
+                        recurrence: opt.value,
+                      }));
+                      setActivePicker(null);
+                    }}
+                    onClick={(e) => {
+                      if (e.button !== 0) return;
                       setDraft((p) => ({
                         ...p,
                         recurrence: opt.value,
@@ -1856,7 +1951,8 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                 type="button"
                 role="option"
                 aria-selected={view.recurrence === 'custom'}
-                onMouseDown={(e) => {
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
                   e.preventDefault();
                   setActivePicker(null);
                   setCustomModalOpen(true);
