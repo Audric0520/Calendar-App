@@ -72,11 +72,16 @@ function ensureCleanBrandNewSlate(): void {
  * A task that somehow points at an event tag (or a deleted tag) is moved to the
  * task fallback, and vice versa.
  */
-function normalizeEventsCategories(
+export function normalizeEventsCategories(
   events: CalendarEvent[],
   tags: CategoryTag[]
-): { normalized: CalendarEvent[]; changed: boolean } {
+): {
+  normalized: CalendarEvent[];
+  changed: boolean;
+  changedEvents: CalendarEvent[];
+} {
   let changed = false;
+  const changedEvents: CalendarEvent[] = [];
   const normalized = events.map((ev) => {
     const scope: CategoryScope = ev.isTask ? 'task' : 'event';
     const tag = tags.find((t) => t.id === ev.category);
@@ -84,9 +89,14 @@ function normalizeEventsCategories(
       return ev;
     }
     changed = true;
-    return { ...ev, category: scope === 'task' ? 'academic' : 'class-sched' };
+    const updated: CalendarEvent = {
+      ...ev,
+      category: scope === 'task' ? 'academic' : 'class-sched',
+    };
+    changedEvents.push(updated);
+    return updated;
   });
-  return { normalized, changed };
+  return { normalized, changed, changedEvents };
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -109,6 +119,25 @@ function openDatabase(): Promise<IDBDatabase> {
     req.onerror = () =>
       reject(req.error ?? new Error('Failed to open IndexedDB'));
   });
+}
+
+function readFallbackEvents(): CalendarEvent[] {
+  try {
+    const raw = localStorage.getItem(LS_KEYS.EVENTS_FALLBACK);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as CalendarEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFallbackEvents(events: CalendarEvent[]): void {
+  try {
+    localStorage.setItem(LS_KEYS.EVENTS_FALLBACK, JSON.stringify(events));
+  } catch {
+    // Quota or privacy mode
+  }
 }
 
 export function loadCustomCategories(): CategoryTag[] {
@@ -157,9 +186,12 @@ export async function loadStoredEvents(
     });
     db.close();
 
-    const { normalized, changed } = normalizeEventsCategories(events, knownTags);
+    const { normalized, changed, changedEvents } = normalizeEventsCategories(
+      events,
+      knownTags
+    );
     if (changed) {
-      await saveStoredEvents(normalized);
+      await applyStoredEventsPatch(changedEvents, []);
     }
     return normalized;
   } catch {
@@ -172,10 +204,7 @@ export async function loadStoredEvents(
           knownTags
         );
         if (changed) {
-          localStorage.setItem(
-            LS_KEYS.EVENTS_FALLBACK,
-            JSON.stringify(normalized)
-          );
+          writeFallbackEvents(normalized);
         }
         return normalized;
       }
@@ -186,6 +215,9 @@ export async function loadStoredEvents(
   }
 }
 
+/**
+ * Logged-out bulk persistence helper (retains existing local-only behavior).
+ */
 export async function saveStoredEvents(events: CalendarEvent[]): Promise<void> {
   try {
     const db = await openDatabase();
@@ -201,44 +233,132 @@ export async function saveStoredEvents(events: CalendarEvent[]): Promise<void> {
     });
     db.close();
   } catch {
-    try {
-      localStorage.setItem(LS_KEYS.EVENTS_FALLBACK, JSON.stringify(events));
-    } catch {
-      // Quota or privacy mode
+    writeFallbackEvents(events);
+  }
+}
+
+/**
+ * Granular single-row IndexedDB write used on the logged-in path (no clear-and-rewrite).
+ */
+export async function putStoredEvent(event: CalendarEvent): Promise<void> {
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(EVENTS_STORE, 'readwrite');
+      const store = tx.objectStore(EVENTS_STORE);
+      store.put(event);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    const existing = readFallbackEvents();
+    const idx = existing.findIndex((e) => e.id === event.id);
+    if (idx >= 0) {
+      const next = [...existing];
+      next[idx] = event;
+      writeFallbackEvents(next);
+    } else {
+      writeFallbackEvents([...existing, event]);
     }
   }
+}
+
+/**
+ * Granular single-row IndexedDB delete used on the logged-in path (no clear-and-rewrite).
+ */
+export async function deleteStoredEvent(eventId: string): Promise<void> {
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(EVENTS_STORE, 'readwrite');
+      const store = tx.objectStore(EVENTS_STORE);
+      store.delete(eventId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    const existing = readFallbackEvents();
+    writeFallbackEvents(existing.filter((e) => e.id !== eventId));
+  }
+}
+
+/**
+ * Applies targeted puts and deletes in one IndexedDB transaction without clearing the store.
+ */
+export async function applyStoredEventsPatch(
+  eventsToPut: CalendarEvent[],
+  eventIdsToDelete: string[]
+): Promise<void> {
+  if (eventsToPut.length === 0 && eventIdsToDelete.length === 0) {
+    return;
+  }
+  try {
+    const db = await openDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(EVENTS_STORE, 'readwrite');
+      const store = tx.objectStore(EVENTS_STORE);
+      for (const id of eventIdsToDelete) {
+        store.delete(id);
+      }
+      for (const ev of eventsToPut) {
+        store.put(ev);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    const deleteSet = new Set(eventIdsToDelete);
+    const byId = new Map<string, CalendarEvent>();
+    for (const ev of readFallbackEvents()) {
+      if (!deleteSet.has(ev.id)) {
+        byId.set(ev.id, ev);
+      }
+    }
+    for (const ev of eventsToPut) {
+      byId.set(ev.id, ev);
+    }
+    writeFallbackEvents(Array.from(byId.values()));
+  }
+}
+
+export function sanitizeThemePreferences(raw: unknown): ThemePreferences {
+  if (!raw || typeof raw !== 'object') return DEFAULT_THEME_PREFS;
+  const parsed = raw as Partial<ThemePreferences>;
+
+  const globalTheme =
+    parsed.globalTheme && VALID_THEMES.has(parsed.globalTheme)
+      ? parsed.globalTheme
+      : DEFAULT_THEME_PREFS.globalTheme;
+
+  const monthThemes: Record<string, ThemeId> = {};
+  if (parsed.monthThemes && typeof parsed.monthThemes === 'object') {
+    for (const [k, v] of Object.entries(parsed.monthThemes)) {
+      if (VALID_THEMES.has(v)) monthThemes[k] = v;
+    }
+  }
+
+  const weekThemes: Record<string, ThemeId> = {};
+  if (parsed.weekThemes && typeof parsed.weekThemes === 'object') {
+    for (const [k, v] of Object.entries(parsed.weekThemes)) {
+      if (VALID_THEMES.has(v)) weekThemes[k] = v;
+    }
+  }
+
+  return {
+    globalTheme,
+    monthThemes,
+    weekThemes,
+  };
 }
 
 export function loadThemePreferences(): ThemePreferences {
   try {
     const raw = localStorage.getItem(LS_KEYS.THEME_PREFS);
     if (!raw) return DEFAULT_THEME_PREFS;
-    const parsed = JSON.parse(raw) as Partial<ThemePreferences>;
-
-    const globalTheme =
-      parsed.globalTheme && VALID_THEMES.has(parsed.globalTheme)
-        ? parsed.globalTheme
-        : DEFAULT_THEME_PREFS.globalTheme;
-
-    const monthThemes: Record<string, ThemeId> = {};
-    if (parsed.monthThemes) {
-      for (const [k, v] of Object.entries(parsed.monthThemes)) {
-        if (VALID_THEMES.has(v)) monthThemes[k] = v;
-      }
-    }
-
-    const weekThemes: Record<string, ThemeId> = {};
-    if (parsed.weekThemes) {
-      for (const [k, v] of Object.entries(parsed.weekThemes)) {
-        if (VALID_THEMES.has(v)) weekThemes[k] = v;
-      }
-    }
-
-    return {
-      globalTheme,
-      monthThemes,
-      weekThemes,
-    };
+    return sanitizeThemePreferences(JSON.parse(raw));
   } catch {
     return DEFAULT_THEME_PREFS;
   }
@@ -252,14 +372,32 @@ export function saveThemePreferences(prefs: ThemePreferences): void {
   }
 }
 
+export function sanitizeNotificationSettings(
+  raw: unknown
+): NotificationSettings {
+  if (!raw || typeof raw !== 'object') return DEFAULT_NOTIFICATION_SETTINGS;
+  const parsed = raw as Partial<NotificationSettings>;
+  return {
+    soundEnabled:
+      typeof parsed.soundEnabled === 'boolean'
+        ? parsed.soundEnabled
+        : DEFAULT_NOTIFICATION_SETTINGS.soundEnabled,
+    desktopEnabled:
+      typeof parsed.desktopEnabled === 'boolean'
+        ? parsed.desktopEnabled
+        : DEFAULT_NOTIFICATION_SETTINGS.desktopEnabled,
+    hasRequestedPermission:
+      typeof parsed.hasRequestedPermission === 'boolean'
+        ? parsed.hasRequestedPermission
+        : DEFAULT_NOTIFICATION_SETTINGS.hasRequestedPermission,
+  };
+}
+
 export function loadNotificationSettings(): NotificationSettings {
   try {
     const raw = localStorage.getItem(LS_KEYS.NOTIFICATION_SETTINGS);
     if (!raw) return DEFAULT_NOTIFICATION_SETTINGS;
-    return {
-      ...DEFAULT_NOTIFICATION_SETTINGS,
-      ...(JSON.parse(raw) as Partial<NotificationSettings>),
-    };
+    return sanitizeNotificationSettings(JSON.parse(raw));
   } catch {
     return DEFAULT_NOTIFICATION_SETTINGS;
   }
@@ -300,7 +438,8 @@ export function saveFiredReminders(map: Record<string, number>): void {
   }
 }
 
-export function loadVisibleCategories(
+export function sanitizeVisibleCategories(
+  raw: unknown,
   customTags: CategoryTag[] = []
 ): EventCategory[] {
   const defaultAll = [
@@ -308,16 +447,23 @@ export function loadVisibleCategories(
     ...TASK_CATEGORY_TAGS.map((c) => c.id),
     ...customTags.map((c) => c.id),
   ];
+  if (!Array.isArray(raw)) return defaultAll;
+  const validSet = new Set<string>(defaultAll);
+  // Unticking every tag is a legitimate state, so no silent re-enable.
+  return raw.filter(
+    (id): id is EventCategory => typeof id === 'string' && validSet.has(id)
+  );
+}
+
+export function loadVisibleCategories(
+  customTags: CategoryTag[] = []
+): EventCategory[] {
   try {
     const raw = localStorage.getItem(LS_KEYS.VISIBLE_CATEGORIES);
-    if (!raw) return defaultAll;
-    const saved = JSON.parse(raw) as EventCategory[];
-    if (!Array.isArray(saved)) return defaultAll;
-    const validSet = new Set<string>(defaultAll);
-    // Unticking every tag is a legitimate state, so no silent re-enable.
-    return saved.filter((id) => validSet.has(id));
+    if (!raw) return sanitizeVisibleCategories(null, customTags);
+    return sanitizeVisibleCategories(JSON.parse(raw), customTags);
   } catch {
-    return defaultAll;
+    return sanitizeVisibleCategories(null, customTags);
   }
 }
 
@@ -334,20 +480,23 @@ export function saveVisibleCategories(categories: EventCategory[]): void {
 
 const DEFAULT_VISIBLE_SCOPES: CategoryScope[] = ['event', 'task'];
 
+export function sanitizeVisibleScopes(raw: unknown): CategoryScope[] {
+  if (!Array.isArray(raw)) return DEFAULT_VISIBLE_SCOPES;
+  // An empty array is a deliberate "hide both" state.
+  if (raw.length === 0) return [];
+  const filtered = raw.filter(
+    (s): s is CategoryScope => s === 'event' || s === 'task'
+  );
+  // Nothing usable survived (corrupt payload) -> show both types again.
+  return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_SCOPES;
+}
+
 /** Which item types the calendar currently draws (Events and/or Tasks). */
 export function loadVisibleScopes(): CategoryScope[] {
   try {
     const raw = localStorage.getItem(LS_KEYS.VISIBLE_SCOPES);
     if (!raw) return DEFAULT_VISIBLE_SCOPES;
-    const parsed = JSON.parse(raw) as CategoryScope[];
-    if (!Array.isArray(parsed)) return DEFAULT_VISIBLE_SCOPES;
-    // An empty array is a deliberate "hide both" state.
-    if (parsed.length === 0) return [];
-    const filtered = parsed.filter(
-      (s): s is CategoryScope => s === 'event' || s === 'task'
-    );
-    // Nothing usable survived (corrupt payload) -> show both types again.
-    return filtered.length > 0 ? filtered : DEFAULT_VISIBLE_SCOPES;
+    return sanitizeVisibleScopes(JSON.parse(raw));
   } catch {
     return DEFAULT_VISIBLE_SCOPES;
   }

@@ -5,10 +5,12 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  CloudOff,
   LogIn,
   LogOut,
   Menu,
   Palette,
+  RefreshCw,
   Search,
   X,
 } from 'lucide-react';
@@ -44,6 +46,9 @@ interface TopNavBarProps {
   permissionStatus: BrowserPermissionState;
   notificationSettings: NotificationSettings;
   upcomingReminders: UpcomingReminderItem[];
+  unsyncedCount?: number;
+  isSyncing?: boolean;
+  onRetrySync?: () => void;
   onToggleSidebar: () => void;
   onChangeView: (view: CalendarView) => void;
   onNavigatePrev: () => void;
@@ -70,6 +75,9 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   permissionStatus,
   notificationSettings,
   upcomingReminders,
+  unsyncedCount = 0,
+  isSyncing = false,
+  onRetrySync,
   onToggleSidebar,
   onChangeView,
   onNavigatePrev,
@@ -476,6 +484,25 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
               }}
             />
           </div>
+
+          {/* Unsynced Queue Indicator */}
+          {user && unsyncedCount > 0 && (
+            <button
+              type="button"
+              onClick={onRetrySync}
+              disabled={isSyncing}
+              title={`${unsyncedCount} change${unsyncedCount === 1 ? '' : 's'} waiting to sync — click to retry`}
+              aria-label="Not synced — click to retry sync"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-500/45 bg-theme-elevated hover:bg-theme-cell-hover disabled:opacity-65 px-2.5 py-1.5 text-[11px] font-bold text-theme-text transition-colors"
+            >
+              {isSyncing ? (
+                <RefreshCw className="w-3.5 h-3.5 text-amber-500 animate-spin shrink-0" />
+              ) : (
+                <CloudOff className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              )}
+              <span className="whitespace-nowrap">Not synced</span>
+            </button>
+          )}
 
           {/* Account: Sign in / Avatar + Email + Sign out */}
           <div className="relative">

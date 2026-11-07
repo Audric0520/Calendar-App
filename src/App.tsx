@@ -27,12 +27,15 @@ import {
   ThemePreferences,
 } from './types/calendar';
 import {
+  applyStoredEventsPatch,
+  deleteStoredEvent,
   loadCustomCategories,
   loadNotificationSettings,
   loadStoredEvents,
   loadThemePreferences,
   loadVisibleCategories,
   loadVisibleScopes,
+  putStoredEvent,
   saveCustomCategories,
   saveNotificationSettings,
   saveStoredEvents,
@@ -40,6 +43,19 @@ import {
   saveVisibleCategories,
   saveVisibleScopes,
 } from './services/storage';
+import {
+  flushSyncQueue,
+  getPendingSyncCount,
+  markLocalSettingsModified,
+  pullAndReconcileCloudState,
+  subscribeSyncStatus,
+  syncSoftDeleteCustomCategory,
+  syncSoftDeleteEvent,
+  syncUpsertCustomCategory,
+  syncUpsertEvent,
+  syncUpsertUserSettings,
+} from './services/cloudSync';
+import { useAuth } from './contexts/AuthContext';
 import { unlockAudioOnFirstInteraction } from './services/sound';
 import {
   expandEventsInRange,
@@ -118,8 +134,21 @@ function makeDefaultDraft(
 }
 
 export const App: React.FC = () => {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const userIdRef = useRef<string | null>(userId);
+  userIdRef.current = userId;
+
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const [unsyncedCount, setUnsyncedCount] = useState<number>(() =>
+    getPendingSyncCount(user?.id)
+  );
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [settingsDirtyTick, setSettingsDirtyTick] = useState<number>(0);
+  const lastSyncedDirtyTickRef = useRef<number>(0);
+  const lastPullAtRef = useRef<number>(0);
 
   const [view, setView] = useState<CalendarView>('week');
   const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
@@ -155,6 +184,11 @@ export const App: React.FC = () => {
   );
   const [notificationSettings, setNotificationSettings] =
     useState<NotificationSettings>(() => loadNotificationSettings());
+
+  const eventsRef = useRef<CalendarEvent[]>(events);
+  eventsRef.current = events;
+  const customCategoriesRef = useRef<CategoryTag[]>(customCategories);
+  customCategoriesRef.current = customCategories;
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
@@ -202,11 +236,12 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Persist events whenever updated (after initial load)
+  // Persist events whenever updated (after initial load) — logged-out local-only path.
+  // When logged in, each mutation writes/deletes only its changed row in IndexedDB.
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || userId) return;
     saveStoredEvents(events);
-  }, [events, isLoaded]);
+  }, [events, isLoaded, userId]);
 
   useEffect(() => {
     saveCustomCategories(customCategories);
@@ -228,6 +263,154 @@ export const App: React.FC = () => {
     saveVisibleScopes(visibleScopes);
   }, [visibleScopes]);
 
+  // Keep unsyncedCount synchronized with the persistent retry queue
+  useEffect(() => {
+    const refresh = () => {
+      setUnsyncedCount(getPendingSyncCount(userId));
+    };
+    refresh();
+    return subscribeSyncStatus(refresh);
+  }, [userId]);
+
+  const persistAndSyncEvent = useCallback(
+    async (event: CalendarEvent, includeCreatedAt: boolean) => {
+      const uid = userIdRef.current;
+      if (!uid) return;
+      await putStoredEvent(event);
+      const stamped = await syncUpsertEvent(uid, event, { includeCreatedAt });
+      if (
+        stamped.updatedAt !== event.updatedAt &&
+        userIdRef.current === uid
+      ) {
+        setEvents((prev) =>
+          prev.map((ev) =>
+            ev.id === stamped.id && ev.updatedAt === event.updatedAt
+              ? stamped
+              : ev
+          )
+        );
+      }
+    },
+    []
+  );
+
+  const runCloudPull = useCallback(async (uid: string) => {
+    setIsSyncing(true);
+    try {
+      const res = await pullAndReconcileCloudState(uid);
+      if (res.ok && userIdRef.current === uid) {
+        if (res.customCategories) {
+          setCustomCategories(res.customCategories);
+        }
+        if (res.events) {
+          setEvents(res.events);
+          setSelectedOccurrence((curr) => {
+            if (!curr) return null;
+            const updatedMaster = res.events!.find(
+              (e) => e.id === curr.masterId
+            );
+            if (!updatedMaster) return null;
+            return { ...curr, event: updatedMaster };
+          });
+        }
+        if (res.settings) {
+          setThemePrefs(res.settings.themePrefs);
+          setNotificationSettings(res.settings.notificationSettings);
+          setVisibleCategories(res.settings.visibleCategories);
+          setVisibleScopes(res.settings.visibleScopes);
+        }
+      }
+    } finally {
+      if (userIdRef.current === uid) {
+        setIsSyncing(false);
+        setUnsyncedCount(getPendingSyncCount(uid));
+      }
+    }
+  }, []);
+
+  // Pull on startup (when logged in) and on tab focus / reconnect
+  useEffect(() => {
+    if (!isLoaded || !userId) return;
+
+    lastPullAtRef.current = Date.now();
+    void runCloudPull(userId);
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - lastPullAtRef.current < 600) return;
+      lastPullAtRef.current = now;
+      void runCloudPull(userId);
+    };
+
+    const onOnline = () => {
+      lastPullAtRef.current = Date.now();
+      void runCloudPull(userId);
+    };
+
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    window.addEventListener('online', onOnline);
+
+    return () => {
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.removeEventListener('online', onOnline);
+    };
+  }, [isLoaded, userId, runCloudPull]);
+
+  // Background retry timer whenever queued writes are pending
+  useEffect(() => {
+    if (!userId || unsyncedCount === 0) return;
+    const timer = window.setInterval(() => {
+      if (navigator.onLine !== false) {
+        void flushSyncQueue(userId);
+      }
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [userId, unsyncedCount]);
+
+  const handleRetrySync = useCallback(() => {
+    if (!userId) return;
+    lastPullAtRef.current = Date.now();
+    void runCloudPull(userId);
+  }, [userId, runCloudPull]);
+
+  const handleUpdateNotificationSettings = useCallback(
+    (next: NotificationSettings) => {
+      setNotificationSettings(next);
+      setSettingsDirtyTick((t) => t + 1);
+    },
+    []
+  );
+
+  // Save user-driven settings locally first, then upsert `user_settings` when logged in
+  useEffect(() => {
+    if (settingsDirtyTick === lastSyncedDirtyTickRef.current) return;
+    lastSyncedDirtyTickRef.current = settingsDirtyTick;
+
+    saveThemePreferences(themePrefs);
+    saveNotificationSettings(notificationSettings);
+    saveVisibleCategories(visibleCategories);
+    saveVisibleScopes(visibleScopes);
+
+    const uid = userIdRef.current;
+    if (!uid) return;
+    markLocalSettingsModified(uid);
+    void syncUpsertUserSettings(uid, {
+      themePrefs,
+      notificationSettings,
+      visibleCategories,
+      visibleScopes,
+    });
+  }, [
+    settingsDirtyTick,
+    themePrefs,
+    notificationSettings,
+    visibleCategories,
+    visibleScopes,
+  ]);
+
   // Custom Category CRUD — every custom tag belongs to either Events or Tasks
   const handleAddCustomCategory = useCallback(
     (label: string, color: string, scope: CategoryScope = 'event'): CategoryTag => {
@@ -243,10 +426,18 @@ export const App: React.FC = () => {
         isCustom: true,
         scope,
       };
-      setCustomCategories((prev) => [...prev, newTag]);
+      const nextCustom = [...customCategoriesRef.current, newTag];
+      saveCustomCategories(nextCustom);
+      setCustomCategories(nextCustom);
       setVisibleCategories((prev) =>
         prev.includes(newTag.id) ? prev : [...prev, newTag.id]
       );
+      setSettingsDirtyTick((t) => t + 1);
+
+      const uid = userIdRef.current;
+      if (uid) {
+        void syncUpsertCustomCategory(uid, newTag);
+      }
       return newTag;
     },
     []
@@ -254,22 +445,52 @@ export const App: React.FC = () => {
 
   const handleDeleteCustomCategory = useCallback(
     (id: string) => {
-      const scope = resolveTagScope(id, customCategories);
-      setCustomCategories((prev) => prev.filter((t) => t.id !== id));
+      const currentCustom = customCategoriesRef.current;
+      const targetTag = currentCustom.find((t) => t.id === id);
+      const scope = resolveTagScope(id, currentCustom);
+      const nextCustom = currentCustom.filter((t) => t.id !== id);
+
+      saveCustomCategories(nextCustom);
+      setCustomCategories(nextCustom);
       setVisibleCategories((prev) => prev.filter((c) => c !== id));
+      setSettingsDirtyTick((t) => t + 1);
+
       // Reassign affected items to their own scope's fallback tag
-      setEvents((prev) =>
-        prev.map((ev) =>
-          ev.category === id
-            ? {
-                ...ev,
-                category: scope === 'task' ? 'academic' : 'class-sched',
-              }
-            : ev
-        )
-      );
+      const nowIso = new Date().toISOString();
+      const reassignedEvents: CalendarEvent[] = [];
+      const nextEvents = eventsRef.current.map((ev) => {
+        if (ev.category !== id) return ev;
+        const updated: CalendarEvent = {
+          ...ev,
+          category: scope === 'task' ? 'academic' : 'class-sched',
+          updatedAt: nowIso,
+        };
+        reassignedEvents.push(updated);
+        return updated;
+      });
+
+      if (reassignedEvents.length > 0) {
+        setEvents(nextEvents);
+      }
+
+      const uid = userIdRef.current;
+      if (uid) {
+        void (async () => {
+          if (reassignedEvents.length > 0) {
+            await applyStoredEventsPatch(reassignedEvents, []);
+          }
+          await Promise.all([
+            ...(targetTag
+              ? [syncSoftDeleteCustomCategory(uid, targetTag)]
+              : []),
+            ...reassignedEvents.map((ev) =>
+              syncUpsertEvent(uid, ev, { includeCreatedAt: true })
+            ),
+          ]);
+        })();
+      }
     },
-    [customCategories]
+    []
   );
 
   // Resolve shell theme based on current view & date
@@ -339,7 +560,7 @@ export const App: React.FC = () => {
   } = useReminderEngine({
     events,
     settings: notificationSettings,
-    onUpdateSettings: setNotificationSettings,
+    onUpdateSettings: handleUpdateNotificationSettings,
     activeTheme: shellResolved.theme,
     onOpenEventById: handleOpenEventById,
   });
@@ -441,88 +662,111 @@ export const App: React.FC = () => {
   ]);
 
   // Event CRUD Handlers
-  const handleSaveDraft = useCallback((draft: EventDraft) => {
-    const nowIso = new Date().toISOString();
-    if (draft.id) {
-      setEvents((prev) =>
-        prev.map((ev) =>
-          ev.id === draft.id
-            ? {
-                ...ev,
-                title: draft.title,
-                start: draft.start,
-                end: draft.end,
-                allDay: draft.allDay,
-                category: draft.category,
-                location: draft.location,
-                description: draft.description,
-                recurrence: draft.recurrence,
-                recurrenceUntil: draft.recurrenceUntil,
-                customRecurrence: draft.customRecurrence,
-                imageUrl: draft.imageUrl,
-                imageName: draft.imageName,
-                isTask: draft.isTask,
-                completed: draft.completed,
-                updatedAt: nowIso,
-              }
-            : ev
-        )
-      );
-    } else {
-      const newEvent: CalendarEvent = {
-        id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: draft.title,
-        start: draft.start,
-        end: draft.end,
-        allDay: draft.allDay,
-        category: draft.category,
-        location: draft.location,
-        description: draft.description,
-        recurrence: draft.recurrence,
-        recurrenceUntil: draft.recurrenceUntil,
-        customRecurrence: draft.customRecurrence,
-        imageUrl: draft.imageUrl,
-        imageName: draft.imageName,
-        isTask: draft.isTask,
-        completed: draft.completed ?? false,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      setEvents((prev) => [...prev, newEvent]);
-    }
-    setFormModalOpen(false);
-  }, []);
+  const handleSaveDraft = useCallback(
+    (draft: EventDraft) => {
+      const nowIso = new Date().toISOString();
+      if (draft.id) {
+        const existing = eventsRef.current.find((ev) => ev.id === draft.id);
+        const updatedEvent: CalendarEvent = {
+          ...(existing ?? { id: draft.id, createdAt: nowIso }),
+          title: draft.title,
+          start: draft.start,
+          end: draft.end,
+          allDay: draft.allDay,
+          category: draft.category,
+          location: draft.location,
+          description: draft.description,
+          recurrence: draft.recurrence,
+          recurrenceUntil: draft.recurrenceUntil,
+          customRecurrence: draft.customRecurrence,
+          imageUrl: draft.imageUrl,
+          imageName: draft.imageName,
+          isTask: draft.isTask,
+          completed: draft.completed ?? existing?.completed ?? false,
+          updatedAt: nowIso,
+        };
+        setEvents((prev) =>
+          prev.map((ev) => (ev.id === draft.id ? updatedEvent : ev))
+        );
+        if (userIdRef.current) {
+          void persistAndSyncEvent(updatedEvent, true);
+        }
+      } else {
+        const newEvent: CalendarEvent = {
+          id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          title: draft.title,
+          start: draft.start,
+          end: draft.end,
+          allDay: draft.allDay,
+          category: draft.category,
+          location: draft.location,
+          description: draft.description,
+          recurrence: draft.recurrence,
+          recurrenceUntil: draft.recurrenceUntil,
+          customRecurrence: draft.customRecurrence,
+          imageUrl: draft.imageUrl,
+          imageName: draft.imageName,
+          isTask: draft.isTask,
+          completed: draft.completed ?? false,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        setEvents((prev) => [...prev, newEvent]);
+        if (userIdRef.current) {
+          void persistAndSyncEvent(newEvent, false);
+        }
+      }
+      setFormModalOpen(false);
+    },
+    [persistAndSyncEvent]
+  );
 
   const handleDeleteEvent = useCallback((eventId: string) => {
+    const targetEvent = eventsRef.current.find((e) => e.id === eventId);
     setEvents((prev) => prev.filter((e) => e.id !== eventId));
     setSelectedOccurrence(null);
     setFormModalOpen(false);
+
+    const uid = userIdRef.current;
+    if (uid) {
+      void (async () => {
+        await deleteStoredEvent(eventId);
+        if (targetEvent) {
+          await syncSoftDeleteEvent(uid, targetEvent);
+        }
+      })();
+    }
   }, []);
 
   const handleToggleTaskComplete = useCallback(
     (eventId: string, e?: React.MouseEvent) => {
       if (e) e.stopPropagation();
+      const existing = eventsRef.current.find((ev) => ev.id === eventId);
+      if (!existing) return;
+
+      const updatedEvent: CalendarEvent = {
+        ...existing,
+        completed: !existing.completed,
+        updatedAt: new Date().toISOString(),
+      };
+
       setEvents((prev) =>
-        prev.map((ev) =>
-          ev.id === eventId
-            ? {
-                ...ev,
-                completed: !ev.completed,
-                updatedAt: new Date().toISOString(),
-              }
-            : ev
-        )
+        prev.map((ev) => (ev.id === eventId ? updatedEvent : ev))
       );
       setSelectedOccurrence((curr) =>
         curr && curr.masterId === eventId
           ? {
               ...curr,
-              event: { ...curr.event, completed: !curr.event.completed },
+              event: updatedEvent,
             }
           : curr
       );
+
+      if (userIdRef.current) {
+        void persistAndSyncEvent(updatedEvent, true);
+      }
     },
-    []
+    [persistAndSyncEvent]
   );
 
   const handleEditOccurrence = useCallback((occ: EventOccurrence) => {
@@ -594,11 +838,15 @@ export const App: React.FC = () => {
     setEvents((prev) => [...prev, demoEvent]);
     setCurrentDate(start);
     setSelectedDate(start);
-  }, []);
+    if (userIdRef.current) {
+      void persistAndSyncEvent(demoEvent, false);
+    }
+  }, [persistAndSyncEvent]);
 
   // Theme Assignment Handlers
   const handleSetGlobalTheme = useCallback((theme: ThemeId) => {
     setThemePrefs((prev) => ({ ...prev, globalTheme: theme }));
+    setSettingsDirtyTick((t) => t + 1);
   }, []);
 
   const handleSetMonthTheme = useCallback(
@@ -609,6 +857,7 @@ export const App: React.FC = () => {
         else nextMonths[monthKey] = theme;
         return { ...prev, monthThemes: nextMonths };
       });
+      setSettingsDirtyTick((t) => t + 1);
     },
     []
   );
@@ -621,6 +870,7 @@ export const App: React.FC = () => {
         else nextWeeks[weekKey] = theme;
         return { ...prev, weekThemes: nextWeeks };
       });
+      setSettingsDirtyTick((t) => t + 1);
     },
     []
   );
@@ -644,6 +894,7 @@ export const App: React.FC = () => {
         weekThemes: nextWeeks,
       };
     });
+    setSettingsDirtyTick((t) => t + 1);
     handleChangeView('month');
   }, [handleChangeView]);
 
@@ -653,12 +904,14 @@ export const App: React.FC = () => {
       monthThemes: {},
       weekThemes: {},
     }));
+    setSettingsDirtyTick((t) => t + 1);
   }, []);
 
   const handleToggleCategory = useCallback((cat: EventCategory) => {
     setVisibleCategories((prev) =>
       prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
     );
+    setSettingsDirtyTick((t) => t + 1);
   }, []);
 
   /**
@@ -669,6 +922,7 @@ export const App: React.FC = () => {
     setVisibleScopes((prev) =>
       prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
     );
+    setSettingsDirtyTick((t) => t + 1);
   }, []);
 
   /** "Events only" / "Tasks only" / "Both" quick presets. */
@@ -676,6 +930,7 @@ export const App: React.FC = () => {
     if (filter === 'both') setVisibleScopes(['event', 'task']);
     else if (filter === 'events') setVisibleScopes(['event']);
     else setVisibleScopes(['task']);
+    setSettingsDirtyTick((t) => t + 1);
   }, []);
 
   return (
@@ -697,6 +952,9 @@ export const App: React.FC = () => {
         permissionStatus={permissionStatus}
         notificationSettings={notificationSettings}
         upcomingReminders={upcomingReminders}
+        unsyncedCount={unsyncedCount}
+        isSyncing={isSyncing}
+        onRetrySync={handleRetrySync}
         onToggleSidebar={handleToggleSidebar}
         onChangeView={handleChangeView}
         onNavigatePrev={handleNavigatePrev}
@@ -711,7 +969,7 @@ export const App: React.FC = () => {
         }}
         onOpenThemeStudio={() => setThemeStudioOpen(true)}
         onRequestNotificationPermission={requestBrowserPermission}
-        onUpdateNotificationSettings={setNotificationSettings}
+        onUpdateNotificationSettings={handleUpdateNotificationSettings}
         onTriggerPreviewAlert={triggerTestReminder}
         onScheduleLiveTenMinDemo={handleScheduleLiveTenMinDemo}
       />
