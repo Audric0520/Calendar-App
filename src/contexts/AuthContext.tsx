@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../services/supabase';
+import { clearLocalUploadDismissals } from '../services/cloudSync';
 
 export interface AuthContextValue {
   user: User | null;
@@ -45,6 +46,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (error) {
           console.warn('Failed to restore auth session:', error.message);
         }
+        if (!data.session) {
+          clearLocalUploadDismissals();
+        }
         setSession(data.session ?? null);
         setUser(data.session?.user ?? null);
         setLoading(false);
@@ -57,8 +61,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
+      if (event === 'SIGNED_OUT' || !nextSession) {
+        clearLocalUploadDismissals();
+      }
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);
@@ -76,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const signInWithGoogle = useCallback(async () => {
     setAuthError(null);
+    clearLocalUploadDismissals();
     if (!supabase) {
       setAuthError(
         'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to sign in.'
@@ -95,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const signOut = useCallback(async () => {
     setAuthError(null);
+    clearLocalUploadDismissals();
     if (!supabase) return;
 
     const { error } = await supabase.auth.signOut();

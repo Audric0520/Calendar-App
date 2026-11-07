@@ -156,6 +156,59 @@ interface SyncedOwnersState {
 
 const QUEUE_KEY_PREFIX = 'chronopalette_sync_queue_v1_';
 const OWNERS_STORAGE_KEY = 'chronopalette_synced_owners_v1';
+const UPLOAD_DISMISSED_SESSION_PREFIX =
+  'chronopalette_local_upload_dismissed_v1_';
+
+const inMemoryDismissedUsers = new Set<string>();
+
+export function isLocalUploadDismissed(userId: string): boolean {
+  if (!userId) return false;
+  if (inMemoryDismissedUsers.has(userId)) return true;
+  try {
+    return (
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(`${UPLOAD_DISMISSED_SESSION_PREFIX}${userId}`) ===
+        '1'
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function dismissLocalUploadForSession(userId: string): void {
+  if (!userId) return;
+  inMemoryDismissedUsers.add(userId);
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(
+        `${UPLOAD_DISMISSED_SESSION_PREFIX}${userId}`,
+        '1'
+      );
+    }
+  } catch {
+    // Ignore storage restrictions
+  }
+}
+
+export function clearLocalUploadDismissals(): void {
+  inMemoryDismissedUsers.clear();
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const toRemove: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i += 1) {
+        const key = sessionStorage.key(i);
+        if (key && key.startsWith(UPLOAD_DISMISSED_SESSION_PREFIX)) {
+          toRemove.push(key);
+        }
+      }
+      for (const key of toRemove) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Ignore storage restrictions
+  }
+}
 
 const VALID_RECURRENCES = new Set<RecurrenceRule>([
   'none',
@@ -767,6 +820,135 @@ export interface CloudPullResult {
   events?: CalendarEvent[];
   customCategories?: CategoryTag[];
   settings?: SyncedUserSettings;
+  unuploadedLocalEvents?: CalendarEvent[];
+  unuploadedLocalCategories?: CategoryTag[];
+}
+
+export interface UploadLocalDataResult {
+  ok: boolean;
+  updatedEventsById: Record<string, CalendarEvent>;
+  remainingEvents: CalendarEvent[];
+  remainingCategories: CategoryTag[];
+  errorMessage?: string;
+}
+
+/**
+ * Uploads pre-existing browser-local custom tags and events to the signed-in user's account
+ * using `upsert` (`onConflict: 'user_id,id'`) without creating duplicates, keeping each
+ * event's original `created_at`, excluding base64 images, and leaving `image_path` /
+ * `image_name` empty. Local data is never deleted before or during upload.
+ */
+export async function uploadLocalDataToAccount(
+  userId: string,
+  eventsToUpload: CalendarEvent[],
+  categoriesToUpload: CategoryTag[]
+): Promise<UploadLocalDataResult> {
+  if (!supabase) {
+    return {
+      ok: false,
+      updatedEventsById: {},
+      remainingEvents: eventsToUpload,
+      remainingCategories: categoriesToUpload,
+      errorMessage: 'Cloud sync is not configured.',
+    };
+  }
+
+  if (isBrowserOffline()) {
+    return {
+      ok: false,
+      updatedEventsById: {},
+      remainingEvents: eventsToUpload,
+      remainingCategories: categoriesToUpload,
+      errorMessage:
+        'You appear to be offline. Your local data is safe — try again when connected.',
+    };
+  }
+
+  const owners = loadOwnersState();
+  const updatedEventsById: Record<string, CalendarEvent> = {};
+  const remainingCategories: CategoryTag[] = [];
+  const remainingEvents: CalendarEvent[] = [];
+  let firstErrorMessage: string | undefined;
+
+  for (const tag of categoriesToUpload) {
+    const payload = buildCategoryUpsertPayload(tag, null);
+    try {
+      const { error } = await supabase
+        .from('custom_categories')
+        .upsert(payload, { onConflict: 'user_id,id' });
+
+      if (error) throw error;
+
+      dequeueMutationKey(userId, `category:${tag.id}`);
+      owners.categories[tag.id] = userId;
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof (err as { message?: string })?.message === 'string'
+            ? (err as { message: string }).message
+            : 'Failed to upload custom tags.';
+      if (!firstErrorMessage) firstErrorMessage = msg;
+      remainingCategories.push(tag);
+    }
+  }
+
+  const stampedForIdb: CalendarEvent[] = [];
+
+  for (const event of eventsToUpload) {
+    const payload = buildEventUpsertPayload(event, {
+      includeCreatedAt: true,
+      deletedAt: null,
+    });
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .upsert(payload, { onConflict: 'user_id,id' })
+        .select('id, created_at, updated_at')
+        .maybeSingle();
+
+      if (error) throw error;
+
+      dequeueMutationKey(userId, `event:${event.id}`);
+      owners.events[event.id] = userId;
+
+      if (data?.updated_at) {
+        const stamped: CalendarEvent = {
+          ...event,
+          createdAt: data.created_at || event.createdAt,
+          updatedAt: data.updated_at,
+        };
+        updatedEventsById[event.id] = stamped;
+        stampedForIdb.push(stamped);
+      } else {
+        updatedEventsById[event.id] = event;
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof (err as { message?: string })?.message === 'string'
+            ? (err as { message: string }).message
+            : 'Failed to upload events.';
+      if (!firstErrorMessage) firstErrorMessage = msg;
+      remainingEvents.push(event);
+    }
+  }
+
+  saveOwnersState(owners);
+
+  if (stampedForIdb.length > 0) {
+    await applyStoredEventsPatch(stampedForIdb, []);
+  }
+
+  const ok = remainingCategories.length === 0 && remainingEvents.length === 0;
+  return {
+    ok,
+    updatedEventsById,
+    remainingEvents,
+    remainingCategories,
+    errorMessage: ok ? undefined : firstErrorMessage,
+  };
 }
 
 let activePullPromise: Promise<CloudPullResult> | null = null;
@@ -816,8 +998,7 @@ export async function pullAndReconcileCloudState(
     const serverCatRows = (catsRes.data ?? []) as CustomCategoryRow[];
     const seenCatIds = new Set<string>();
     const mergedCustomMap = new Map<string, CategoryTag>();
-    const newlyUploadedLocalCatIds: string[] = [];
-    const categoriesToUpload: CategoryTag[] = [];
+    const unuploadedLocalCategories: CategoryTag[] = [];
 
     for (const row of serverCatRows) {
       seenCatIds.add(row.id);
@@ -865,10 +1046,10 @@ export async function pullAndReconcileCloudState(
       }
 
       if (!owners.categories[localTag.id]) {
-        // Pre-existing local custom tag -> keep & upload to cloud
+        // Pre-existing browser-local custom tag not on server yet:
+        // keep locally intact and surface for user confirmation before uploading.
         mergedCustomMap.set(localTag.id, localTag);
-        categoriesToUpload.push(localTag);
-        newlyUploadedLocalCatIds.push(localTag.id);
+        unuploadedLocalCategories.push(localTag);
       } else {
         delete owners.categories[localTag.id];
       }
@@ -888,6 +1069,7 @@ export async function pullAndReconcileCloudState(
     const mergedEventsList: CalendarEvent[] = [];
     const putMap = new Map<string, CalendarEvent>();
     const deleteIdSet = new Set<string>();
+    const unuploadedLocalEventIds = new Set<string>();
     const eventsToUpload: Array<{
       event: CalendarEvent;
       includeCreatedAt: boolean;
@@ -932,7 +1114,7 @@ export async function pullAndReconcileCloudState(
         Number.isFinite(serverMs) &&
         localMs > serverMs + 1000
       ) {
-        // Local copy is strictly newer than server row
+        // Local copy of an already-synced event is strictly newer than server row
         mergedEventsList.push(localEv);
         eventsToUpload.push({ event: localEv, includeCreatedAt: true });
       } else {
@@ -955,9 +1137,10 @@ export async function pullAndReconcileCloudState(
       }
 
       if (!owners.events[localEv.id]) {
-        // Pre-existing local event -> keep & upload keeping original created_at
+        // Pre-existing browser-local event not on server yet:
+        // keep locally intact and surface for user confirmation before uploading.
         mergedEventsList.push(localEv);
-        eventsToUpload.push({ event: localEv, includeCreatedAt: true });
+        unuploadedLocalEventIds.add(localEv.id);
       } else {
         deleteIdSet.add(localEv.id);
         delete owners.events[localEv.id];
@@ -977,11 +1160,18 @@ export async function pullAndReconcileCloudState(
     if (categoriesAdjusted) {
       for (const adj of changedEvents) {
         putMap.set(adj.id, adj);
-        if (!eventsToUpload.some((u) => u.event.id === adj.id)) {
+        if (
+          owners.events[adj.id] === userId &&
+          !eventsToUpload.some((u) => u.event.id === adj.id)
+        ) {
           eventsToUpload.push({ event: adj, includeCreatedAt: true });
         }
       }
     }
+
+    const unuploadedLocalEvents = finalEvents.filter((ev) =>
+      unuploadedLocalEventIds.has(ev.id)
+    );
 
     await applyStoredEventsPatch(
       Array.from(putMap.values()),
@@ -1031,13 +1221,14 @@ export async function pullAndReconcileCloudState(
             sRow.visible_categories,
             mergedCustomCategories
           );
-          if (newlyUploadedLocalCatIds.length > 0) {
-            for (const newId of newlyUploadedLocalCatIds) {
-              if (!nextVisibleCats.includes(newId)) {
-                nextVisibleCats = [...nextVisibleCats, newId];
-              }
+          // Keep unuploaded local custom tags visible locally if they were visible locally
+          for (const localTag of unuploadedLocalCategories) {
+            if (
+              localSettingsSnapshot.visibleCategories.includes(localTag.id) &&
+              !nextVisibleCats.includes(localTag.id)
+            ) {
+              nextVisibleCats = [...nextVisibleCats, localTag.id];
             }
-            shouldPushLocalSettings = true;
           }
 
           resolvedSettings = {
@@ -1070,9 +1261,8 @@ export async function pullAndReconcileCloudState(
 
     saveOwnersState(owners);
 
-    // Upload any local-only categories, events, or settings discovered during reconciliation
+    // Sync any newer edits to already-owned events or user_settings
     await Promise.all([
-      ...categoriesToUpload.map((tag) => syncUpsertCustomCategory(userId, tag)),
       ...eventsToUpload.map(({ event, includeCreatedAt }) =>
         syncUpsertEvent(userId, event, { includeCreatedAt })
       ),
@@ -1092,6 +1282,8 @@ export async function pullAndReconcileCloudState(
       events: latestStoredEvents,
       customCategories: mergedCustomCategories,
       settings: resolvedSettings,
+      unuploadedLocalEvents,
+      unuploadedLocalCategories,
     };
   })();
 

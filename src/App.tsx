@@ -44,8 +44,10 @@ import {
   saveVisibleScopes,
 } from './services/storage';
 import {
+  dismissLocalUploadForSession,
   flushSyncQueue,
   getPendingSyncCount,
+  isLocalUploadDismissed,
   markLocalSettingsModified,
   pullAndReconcileCloudState,
   subscribeSyncStatus,
@@ -54,6 +56,7 @@ import {
   syncUpsertCustomCategory,
   syncUpsertEvent,
   syncUpsertUserSettings,
+  uploadLocalDataToAccount,
 } from './services/cloudSync';
 import { useAuth } from './contexts/AuthContext';
 import { unlockAudioOnFirstInteraction } from './services/sound';
@@ -81,6 +84,7 @@ import { DayView } from './components/calendar/DayView';
 import { EventFormModal } from './components/modals/EventFormModal';
 import { EventDetailModal } from './components/modals/EventDetailModal';
 import { ThemeStudioModal } from './components/modals/ThemeStudioModal';
+import { LocalDataUploadModal } from './components/modals/LocalDataUploadModal';
 import { ReminderToastStack } from './components/notifications/ReminderToastStack';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -198,6 +202,12 @@ export const App: React.FC = () => {
   const [selectedOccurrence, setSelectedOccurrence] =
     useState<EventOccurrence | null>(null);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
+  const [pendingLocalUpload, setPendingLocalUpload] = useState<{
+    events: CalendarEvent[];
+    categories: CategoryTag[];
+  } | null>(null);
+  const [isUploadingLocalData, setIsUploadingLocalData] = useState(false);
+  const [localUploadError, setLocalUploadError] = useState<string | null>(null);
 
   // Build unified category map (event tags + task tags + custom tags)
   const categoryMap = useMemo(
@@ -294,6 +304,15 @@ export const App: React.FC = () => {
     []
   );
 
+  // Reset any open upload prompt when signed out
+  useEffect(() => {
+    if (!userId) {
+      setPendingLocalUpload(null);
+      setLocalUploadError(null);
+      setIsUploadingLocalData(false);
+    }
+  }, [userId]);
+
   const runCloudPull = useCallback(async (uid: string) => {
     setIsSyncing(true);
     try {
@@ -319,6 +338,18 @@ export const App: React.FC = () => {
           setVisibleCategories(res.settings.visibleCategories);
           setVisibleScopes(res.settings.visibleScopes);
         }
+
+        const localEvs = res.unuploadedLocalEvents ?? [];
+        const localCats = res.unuploadedLocalCategories ?? [];
+        if (localEvs.length === 0 && localCats.length === 0) {
+          setPendingLocalUpload(null);
+          setLocalUploadError(null);
+        } else if (!isLocalUploadDismissed(uid)) {
+          setPendingLocalUpload({
+            events: localEvs,
+            categories: localCats,
+          });
+        }
       }
     } finally {
       if (userIdRef.current === uid) {
@@ -326,6 +357,75 @@ export const App: React.FC = () => {
         setUnsyncedCount(getPendingSyncCount(uid));
       }
     }
+  }, []);
+
+  const handleConfirmLocalUpload = useCallback(async () => {
+    const uid = userIdRef.current;
+    if (!uid || !pendingLocalUpload || isUploadingLocalData) return;
+
+    setIsUploadingLocalData(true);
+    setLocalUploadError(null);
+
+    try {
+      const result = await uploadLocalDataToAccount(
+        uid,
+        pendingLocalUpload.events,
+        pendingLocalUpload.categories
+      );
+
+      if (userIdRef.current !== uid) return;
+
+      if (Object.keys(result.updatedEventsById).length > 0) {
+        setEvents((prev) =>
+          prev.map((ev) => result.updatedEventsById[ev.id] ?? ev)
+        );
+      }
+
+      if (pendingLocalUpload.categories.length > 0) {
+        const uploadedIds = pendingLocalUpload.categories
+          .filter(
+            (c) => !result.remainingCategories.some((rem) => rem.id === c.id)
+          )
+          .map((c) => c.id);
+        if (uploadedIds.length > 0) {
+          setVisibleCategories((prev) => {
+            const merged = [...prev];
+            for (const id of uploadedIds) {
+              if (!merged.includes(id)) merged.push(id);
+            }
+            return merged;
+          });
+          setSettingsDirtyTick((t) => t + 1);
+        }
+      }
+
+      if (result.ok) {
+        setPendingLocalUpload(null);
+        setLocalUploadError(null);
+      } else {
+        setPendingLocalUpload({
+          events: result.remainingEvents,
+          categories: result.remainingCategories,
+        });
+        setLocalUploadError(
+          result.errorMessage ??
+            'Could not finish uploading local items. Your local data is untouched — please try again.'
+        );
+      }
+    } finally {
+      if (userIdRef.current === uid) {
+        setIsUploadingLocalData(false);
+      }
+    }
+  }, [isUploadingLocalData, pendingLocalUpload]);
+
+  const handleDismissLocalUpload = useCallback(() => {
+    const uid = userIdRef.current;
+    if (uid) {
+      dismissLocalUploadForSession(uid);
+    }
+    setPendingLocalUpload(null);
+    setLocalUploadError(null);
   }, []);
 
   // Pull on startup (when logged in) and on tab focus / reconnect
@@ -638,7 +738,14 @@ export const App: React.FC = () => {
       ) {
         return;
       }
-      if (formModalOpen || selectedOccurrence || themeStudioOpen) return;
+      if (
+        formModalOpen ||
+        selectedOccurrence ||
+        themeStudioOpen ||
+        Boolean(pendingLocalUpload)
+      ) {
+        return;
+      }
 
       if (e.key === 'm' || e.key === 'M') handleChangeView('month');
       else if (e.key === 'w' || e.key === 'W') handleChangeView('week');
@@ -656,6 +763,7 @@ export const App: React.FC = () => {
     formModalOpen,
     handleChangeView,
     handleJumpToday,
+    pendingLocalUpload,
     selectedDate,
     selectedOccurrence,
     themeStudioOpen,
@@ -1166,6 +1274,17 @@ export const App: React.FC = () => {
         onSetWeekTheme={handleSetWeekTheme}
         onApplySplitWeekDemo={handleApplySplitWeekDemo}
         onClearAllOverrides={handleClearAllOverrides}
+      />
+
+      {/* First-Login Local Data Upload Prompt */}
+      <LocalDataUploadModal
+        isOpen={Boolean(userId && pendingLocalUpload)}
+        eventCount={pendingLocalUpload?.events.length ?? 0}
+        categoryCount={pendingLocalUpload?.categories.length ?? 0}
+        isUploading={isUploadingLocalData}
+        errorMessage={localUploadError}
+        onUpload={handleConfirmLocalUpload}
+        onNotNow={handleDismissLocalUpload}
       />
 
       {/* Animated In-App 10-Minute Reminder Toast Stack */}
