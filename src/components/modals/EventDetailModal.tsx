@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import {
   AlignLeft,
@@ -24,6 +24,7 @@ import {
   modalPanelVariants,
 } from '../../motion/presets';
 import { SkeletonImage } from '../../motion/SkeletonImage';
+import { getOrCreateSignedUrl } from '../../services/imageStorage';
 
 interface EventDetailModalProps {
   occurrence: EventOccurrence | null;
@@ -46,11 +47,15 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
 }) => {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const retriedUrlRef = useRef<string | null>(null);
 
   // Hold the last occurrence while the close animation plays so the panel can
   // fade/scale out instead of unmounting instantly.
   const [retainedOccurrence, setRetainedOccurrence] =
     useState<EventOccurrence | null>(occurrence);
+
+  const occurrenceId = occurrence?.occurrenceId ?? null;
+  const occurrenceImageUrl = occurrence?.event.imageUrl;
 
   useEffect(() => {
     if (occurrence) setRetainedOccurrence(occurrence);
@@ -58,8 +63,11 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
   useEffect(() => {
     setLightboxOpen(false);
+  }, [occurrenceId]);
+
+  useEffect(() => {
     setImgError(false);
-  }, [occurrence]);
+  }, [occurrenceId, occurrenceImageUrl]);
 
   useEffect(() => {
     if (!occurrence) return;
@@ -114,7 +122,20 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 rounded="rounded-none"
                 className="w-full max-h-72 min-h-40 bg-black/40"
                 imgClassName="w-full max-h-72 object-contain mx-auto cursor-zoom-in"
-                onErrorImage={() => setImgError(true)}
+                onErrorImage={() => {
+                  setImgError(true);
+                  if (
+                    event.imagePath &&
+                    event.imageUrl &&
+                    !event.imageUrl.startsWith('data:') &&
+                    retriedUrlRef.current !== event.imageUrl
+                  ) {
+                    retriedUrlRef.current = event.imageUrl;
+                    void getOrCreateSignedUrl(event.imagePath, {
+                      forceRefresh: true,
+                    });
+                  }
+                }}
                 onClick={() => setLightboxOpen(true)}
               />
               <div className="absolute top-3 right-3 flex items-center gap-1.5">

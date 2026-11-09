@@ -58,6 +58,12 @@ import {
   syncUpsertUserSettings,
   uploadLocalDataToAccount,
 } from './services/cloudSync';
+import {
+  clearSignedUrlCache,
+  ensureSignedUrlsForEvents,
+  getCachedSignedUrlSnapshot,
+  subscribeSignedUrls,
+} from './services/imageStorage';
 import { useAuth } from './contexts/AuthContext';
 import { unlockAudioOnFirstInteraction } from './services/sound';
 import {
@@ -145,6 +151,9 @@ export const App: React.FC = () => {
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [signedUrlsByPath, setSignedUrlsByPath] = useState<
+    Record<string, string>
+  >(() => getCachedSignedUrlSnapshot());
 
   const [unsyncedCount, setUnsyncedCount] = useState<number>(() =>
     getPendingSyncCount(user?.id)
@@ -282,14 +291,80 @@ export const App: React.FC = () => {
     return subscribeSyncStatus(refresh);
   }, [userId]);
 
+  // Keep signedUrlsByPath reactive whenever imageStorage caches a fresh signed URL
+  useEffect(() => {
+    return subscribeSignedUrls(() => {
+      setSignedUrlsByPath(getCachedSignedUrlSnapshot());
+    });
+  }, []);
+
+  // Resolve ~1-hour signed URLs for Storage-backed images and refresh before expiry
+  useEffect(() => {
+    if (!userId) {
+      clearSignedUrlCache();
+      setSignedUrlsByPath({});
+      return;
+    }
+
+    let cancelled = false;
+    let refreshTimer: number | null = null;
+
+    const scheduleSignedUrlRefresh = async () => {
+      if (cancelled) return;
+      const { urlsByPath, nextRefreshInMs } = await ensureSignedUrlsForEvents(
+        eventsRef.current
+      );
+      if (cancelled) return;
+      setSignedUrlsByPath(urlsByPath);
+
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+      if (nextRefreshInMs !== null) {
+        refreshTimer = window.setTimeout(() => {
+          void scheduleSignedUrlRefresh();
+        }, nextRefreshInMs);
+      }
+    };
+
+    void scheduleSignedUrlRefresh();
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'hidden') return;
+      void scheduleSignedUrlRefresh();
+    };
+
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
+  }, [userId, events]);
+
   const persistAndSyncEvent = useCallback(
-    async (event: CalendarEvent, includeCreatedAt: boolean) => {
+    async (
+      event: CalendarEvent,
+      includeCreatedAt: boolean,
+      previousImagePath?: string
+    ) => {
       const uid = userIdRef.current;
       if (!uid) return;
       await putStoredEvent(event);
-      const stamped = await syncUpsertEvent(uid, event, { includeCreatedAt });
+      const stamped = await syncUpsertEvent(uid, event, {
+        includeCreatedAt,
+        previousImagePath,
+      });
       if (
-        stamped.updatedAt !== event.updatedAt &&
+        (stamped.updatedAt !== event.updatedAt ||
+          stamped.imagePath !== event.imagePath ||
+          stamped.imageUrl !== event.imageUrl) &&
         userIdRef.current === uid
       ) {
         setEvents((prev) =>
@@ -603,10 +678,38 @@ export const App: React.FC = () => {
     Object.keys(themePrefs.monthThemes).length +
     Object.keys(themePrefs.weekThemes).length;
 
+  // Hydrate Storage-backed events with live ~1-hour signed URLs for UI display
+  const hydratedEvents = useMemo(() => {
+    if (!userId) return events;
+    return events.map((ev) => {
+      if (!ev.imagePath || ev.imageUrl?.startsWith('data:')) {
+        return ev;
+      }
+      const signed = signedUrlsByPath[ev.imagePath];
+      return signed ? { ...ev, imageUrl: signed } : ev;
+    });
+  }, [events, signedUrlsByPath, userId]);
+
+  const hydratedSelectedOccurrence = useMemo(() => {
+    if (!selectedOccurrence) return null;
+    const ev = selectedOccurrence.event;
+    if (!userId || !ev.imagePath || ev.imageUrl?.startsWith('data:')) {
+      return selectedOccurrence;
+    }
+    const signed = signedUrlsByPath[ev.imagePath];
+    if (!signed || ev.imageUrl === signed) {
+      return selectedOccurrence;
+    }
+    return {
+      ...selectedOccurrence,
+      event: { ...ev, imageUrl: signed },
+    };
+  }, [selectedOccurrence, signedUrlsByPath, userId]);
+
   // Filter master items by item type (event/task), tag visibility & search
   const filteredMasterEvents = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return events.filter((ev) => {
+    return hydratedEvents.filter((ev) => {
       const scope: CategoryScope = ev.isTask ? 'task' : 'event';
       if (!visibleScopes.includes(scope)) return false;
       if (!visibleCategories.includes(ev.category)) return false;
@@ -619,7 +722,7 @@ export const App: React.FC = () => {
         catLabel.toLowerCase().includes(q)
       );
     });
-  }, [categoryMap, events, searchQuery, visibleCategories, visibleScopes]);
+  }, [categoryMap, hydratedEvents, searchQuery, visibleCategories, visibleScopes]);
 
   // Expand occurrences across a generous window around currentDate for main view + mini-calendar
   const expandedOccurrences = useMemo(() => {
@@ -634,7 +737,7 @@ export const App: React.FC = () => {
 
   const handleOpenEventById = useCallback(
     (eventId: string) => {
-      const target = events.find((e) => e.id === eventId);
+      const target = hydratedEvents.find((e) => e.id === eventId);
       if (!target) return;
       const expanded = expandEventsInRange(
         [target],
@@ -647,7 +750,7 @@ export const App: React.FC = () => {
         setSelectedOccurrence(expanded[0]);
       }
     },
-    [events]
+    [hydratedEvents]
   );
 
   const {
@@ -658,7 +761,7 @@ export const App: React.FC = () => {
     upcomingReminders,
     triggerTestReminder,
   } = useReminderEngine({
-    events,
+    events: hydratedEvents,
     settings: notificationSettings,
     onUpdateSettings: handleUpdateNotificationSettings,
     activeTheme: shellResolved.theme,
@@ -773,8 +876,14 @@ export const App: React.FC = () => {
   const handleSaveDraft = useCallback(
     (draft: EventDraft) => {
       const nowIso = new Date().toISOString();
+      const resolvedImageUrl =
+        draft.imagePath && !draft.imageUrl?.startsWith('data:')
+          ? undefined
+          : draft.imageUrl;
+
       if (draft.id) {
         const existing = eventsRef.current.find((ev) => ev.id === draft.id);
+        const previousImagePath = existing?.imagePath;
         const updatedEvent: CalendarEvent = {
           ...(existing ?? { id: draft.id, createdAt: nowIso }),
           title: draft.title,
@@ -787,7 +896,8 @@ export const App: React.FC = () => {
           recurrence: draft.recurrence,
           recurrenceUntil: draft.recurrenceUntil,
           customRecurrence: draft.customRecurrence,
-          imageUrl: draft.imageUrl,
+          imageUrl: resolvedImageUrl,
+          imagePath: draft.imagePath,
           imageName: draft.imageName,
           isTask: draft.isTask,
           completed: draft.completed ?? existing?.completed ?? false,
@@ -797,7 +907,7 @@ export const App: React.FC = () => {
           prev.map((ev) => (ev.id === draft.id ? updatedEvent : ev))
         );
         if (userIdRef.current) {
-          void persistAndSyncEvent(updatedEvent, true);
+          void persistAndSyncEvent(updatedEvent, true, previousImagePath);
         }
       } else {
         const newEvent: CalendarEvent = {
@@ -812,7 +922,8 @@ export const App: React.FC = () => {
           recurrence: draft.recurrence,
           recurrenceUntil: draft.recurrenceUntil,
           customRecurrence: draft.customRecurrence,
-          imageUrl: draft.imageUrl,
+          imageUrl: resolvedImageUrl,
+          imagePath: draft.imagePath,
           imageName: draft.imageName,
           isTask: draft.isTask,
           completed: draft.completed ?? false,
@@ -893,6 +1004,7 @@ export const App: React.FC = () => {
       recurrenceUntil: ev.recurrenceUntil,
       customRecurrence: ev.customRecurrence,
       imageUrl: ev.imageUrl,
+      imagePath: ev.imagePath,
       imageName: ev.imageName,
       isTask: ev.isTask,
       completed: ev.completed,
@@ -915,6 +1027,7 @@ export const App: React.FC = () => {
       recurrenceUntil: ev.recurrenceUntil,
       customRecurrence: ev.customRecurrence,
       imageUrl: ev.imageUrl,
+      imagePath: ev.imagePath,
       imageName: ev.imageName,
       isTask: ev.isTask,
       completed: false,
@@ -1055,7 +1168,7 @@ export const App: React.FC = () => {
         activeThemeSource={shellResolved.source}
         themeOverrideCount={themeOverrideCount}
         searchQuery={searchQuery}
-        allEvents={events}
+        allEvents={hydratedEvents}
         categoryMap={categoryMap}
         permissionStatus={permissionStatus}
         notificationSettings={notificationSettings}
@@ -1254,7 +1367,7 @@ export const App: React.FC = () => {
 
       {/* Event Detail Modal (with Full Image Preview & Lightbox) */}
       <EventDetailModal
-        occurrence={selectedOccurrence}
+        occurrence={hydratedSelectedOccurrence}
         categoryMap={categoryMap}
         onClose={() => setSelectedOccurrence(null)}
         onEdit={handleEditOccurrence}

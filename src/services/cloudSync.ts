@@ -29,6 +29,11 @@ import {
   saveVisibleCategories,
   saveVisibleScopes,
 } from './storage';
+import {
+  copyEventImageInStorage,
+  removeEventImageFromStorage,
+  uploadEventImageFromDataUrl,
+} from './imageStorage';
 import { supabase } from './supabase';
 
 export interface SyncedUserSettings {
@@ -77,8 +82,8 @@ export interface EventUpsertPayload {
   recurrence_until: string | null;
   custom_recurrence: CustomRecurrenceConfig | null;
   image_url: string | null;
-  image_path: null;
-  image_name: null;
+  image_path: string | null;
+  image_name: string | null;
   is_task: boolean;
   completed: boolean;
   created_at?: string;
@@ -132,6 +137,14 @@ type QueuedMutation =
       key: string;
       id: string;
       payload: EventUpsertPayload;
+      needsMediaUpload?: boolean;
+      previousImagePath?: string;
+      queuedAt: string;
+    }
+  | {
+      kind: 'storage_delete';
+      key: string;
+      path: string;
       queuedAt: string;
     }
   | {
@@ -331,7 +344,7 @@ export function getPendingSyncCount(userId: string | null | undefined): number {
 
 /**
  * Only external `https://` image URLs are synced to `events.image_url`.
- * Base64 (`data:`) URLs are intentionally excluded from database rows.
+ * Base64 (`data:`) URLs and Storage-backed attachments never populate `image_url`.
  */
 export function sanitizeRemoteImageUrl(url?: string): string | null {
   if (typeof url !== 'string') return null;
@@ -344,6 +357,9 @@ export function buildEventUpsertPayload(
   event: CalendarEvent,
   options: { includeCreatedAt: boolean; deletedAt?: string | null }
 ): EventUpsertPayload {
+  const isDeleted = Boolean(options.deletedAt);
+  const hasStoragePath = !isDeleted && Boolean(event.imagePath?.trim());
+
   const payload: EventUpsertPayload = {
     id: event.id,
     title: event.title,
@@ -356,9 +372,12 @@ export function buildEventUpsertPayload(
     recurrence: event.recurrence,
     recurrence_until: event.recurrenceUntil ?? null,
     custom_recurrence: event.customRecurrence ?? null,
-    image_url: sanitizeRemoteImageUrl(event.imageUrl),
-    image_path: null,
-    image_name: null,
+    image_url:
+      isDeleted || hasStoragePath
+        ? null
+        : sanitizeRemoteImageUrl(event.imageUrl),
+    image_path: hasStoragePath ? (event.imagePath as string) : null,
+    image_name: hasStoragePath ? event.imageName ?? null : null,
     is_task: Boolean(event.isTask),
     completed: Boolean(event.completed),
     deleted_at: options.deletedAt ?? null,
@@ -381,20 +400,33 @@ export function mapRowToCalendarEvent(
     ? (row.recurrence as RecurrenceRule)
     : 'none';
 
-  // Keep local-only base64 attachments intact while server image_url/image_path are empty
+  const hasRemoteStoragePath =
+    typeof row.image_path === 'string' && row.image_path.trim().length > 0;
+
+  // Keep un-migrated local base64 attachments intact until Storage upload succeeds
   const preserveLocalBase64 =
+    !hasRemoteStoragePath &&
     !row.image_url &&
-    !row.image_path &&
     typeof localExisting?.imageUrl === 'string' &&
     localExisting.imageUrl.startsWith('data:');
 
-  const imageUrl = preserveLocalBase64
-    ? localExisting?.imageUrl
-    : row.image_url ?? undefined;
+  let imagePath: string | undefined;
+  let imageUrl: string | undefined;
+  let imageName: string | undefined;
 
-  const imageName = preserveLocalBase64
-    ? localExisting?.imageName
-    : row.image_name ?? undefined;
+  if (hasRemoteStoragePath) {
+    imagePath = row.image_path!.trim();
+    imageName = row.image_name ?? undefined;
+    imageUrl = undefined;
+  } else if (row.image_url) {
+    imagePath = undefined;
+    imageUrl = row.image_url;
+    imageName = row.image_name ?? localExisting?.imageName;
+  } else if (preserveLocalBase64) {
+    imagePath = undefined;
+    imageUrl = localExisting?.imageUrl;
+    imageName = localExisting?.imageName;
+  }
 
   const nowIso = new Date().toISOString();
 
@@ -411,6 +443,7 @@ export function mapRowToCalendarEvent(
     recurrenceUntil: row.recurrence_until ?? undefined,
     customRecurrence: row.custom_recurrence ?? undefined,
     imageUrl,
+    imagePath,
     imageName,
     isTask: Boolean(row.is_task),
     completed: Boolean(row.completed),
@@ -447,29 +480,114 @@ function isBrowserOffline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
 
+export async function syncDeleteEventImage(
+  userId: string,
+  imagePath?: string | null
+): Promise<void> {
+  if (!imagePath) return;
+  const cleanPath = imagePath.trim();
+  if (!cleanPath) return;
+
+  const queueKey = `storage_del:${cleanPath}`;
+  if (!supabase || isBrowserOffline()) {
+    enqueueMutation(userId, {
+      kind: 'storage_delete',
+      key: queueKey,
+      path: cleanPath,
+      queuedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  const removed = await removeEventImageFromStorage(cleanPath);
+  if (removed) {
+    dequeueMutationKey(userId, queueKey);
+  } else {
+    enqueueMutation(userId, {
+      kind: 'storage_delete',
+      key: queueKey,
+      path: cleanPath,
+      queuedAt: new Date().toISOString(),
+    });
+  }
+}
+
 export async function syncUpsertEvent(
   userId: string,
   event: CalendarEvent,
-  options: { includeCreatedAt: boolean }
+  options: { includeCreatedAt: boolean; previousImagePath?: string }
 ): Promise<CalendarEvent> {
-  const payload = buildEventUpsertPayload(event, {
-    includeCreatedAt: options.includeCreatedAt,
-    deletedAt: null,
-  });
   const queueKey = `event:${event.id}`;
+  const hasLocalBase64 =
+    typeof event.imageUrl === 'string' && event.imageUrl.startsWith('data:');
+
+  // If a previous storage image was removed or replaced by an external URL, delete it
+  if (
+    options.previousImagePath &&
+    !hasLocalBase64 &&
+    event.imagePath !== options.previousImagePath
+  ) {
+    await syncDeleteEventImage(userId, options.previousImagePath);
+  }
 
   if (!supabase || isBrowserOffline()) {
+    const payload = buildEventUpsertPayload(event, {
+      includeCreatedAt: options.includeCreatedAt,
+      deletedAt: null,
+    });
     enqueueMutation(userId, {
       kind: 'event',
       key: queueKey,
       id: event.id,
       payload,
+      needsMediaUpload: hasLocalBase64,
+      previousImagePath: options.previousImagePath,
       queuedAt: new Date().toISOString(),
     });
     return event;
   }
 
+  let workingEvent = event;
+
   try {
+    if (hasLocalBase64 && workingEvent.imageUrl) {
+      const uploaded = await uploadEventImageFromDataUrl({
+        userId,
+        eventId: workingEvent.id,
+        dataUrl: workingEvent.imageUrl,
+        originalFileName: workingEvent.imageName,
+        previousImagePath: options.previousImagePath,
+      });
+      workingEvent = {
+        ...workingEvent,
+        imagePath: uploaded.imagePath,
+        imageName: uploaded.imageName,
+        imageUrl: undefined,
+      };
+    } else if (
+      workingEvent.imagePath &&
+      !workingEvent.imagePath.startsWith(`${userId}/${workingEvent.id}.`)
+    ) {
+      // Duplicated event referencing another event's storage object -> copy to its own path
+      const copied = await copyEventImageInStorage({
+        userId,
+        newEventId: workingEvent.id,
+        sourceImagePath: workingEvent.imagePath,
+        sourceImageName: workingEvent.imageName,
+      });
+      workingEvent = {
+        ...workingEvent,
+        imagePath: copied.imagePath,
+        imageName: copied.imageName,
+        imageUrl: undefined,
+      };
+    }
+
+    const payload = buildEventUpsertPayload(workingEvent, {
+      includeCreatedAt: options.includeCreatedAt,
+      deletedAt: null,
+    });
+
     const { data, error } = await supabase
       .from('events')
       .upsert(payload, { onConflict: 'user_id,id' })
@@ -486,24 +604,31 @@ export async function syncUpsertEvent(
     owners.events[event.id] = userId;
     saveOwnersState(owners);
 
-    if (data?.updated_at) {
-      const stamped: CalendarEvent = {
-        ...event,
-        createdAt: data.created_at || event.createdAt,
-        updatedAt: data.updated_at,
-      };
-      await putStoredEvent(stamped);
-      return stamped;
-    }
+    const finalEvent: CalendarEvent = {
+      ...workingEvent,
+      createdAt: data?.created_at || workingEvent.createdAt,
+      updatedAt: data?.updated_at || workingEvent.updatedAt,
+    };
 
-    return event;
+    // Persist storage-backed event locally (removes local base64 now that upload succeeded)
+    await putStoredEvent(finalEvent);
+    return finalEvent;
   } catch (err) {
     console.warn('Event upsert queued for retry:', err);
+    const stillHasBase64 =
+      typeof workingEvent.imageUrl === 'string' &&
+      workingEvent.imageUrl.startsWith('data:');
+    const fallbackPayload = buildEventUpsertPayload(workingEvent, {
+      includeCreatedAt: options.includeCreatedAt,
+      deletedAt: null,
+    });
     enqueueMutation(userId, {
       kind: 'event',
       key: queueKey,
       id: event.id,
-      payload,
+      payload: fallbackPayload,
+      needsMediaUpload: stillHasBase64,
+      previousImagePath: stillHasBase64 ? options.previousImagePath : undefined,
       queuedAt: new Date().toISOString(),
     });
     return event;
@@ -514,6 +639,10 @@ export async function syncSoftDeleteEvent(
   userId: string,
   event: CalendarEvent
 ): Promise<void> {
+  if (event.imagePath) {
+    await syncDeleteEventImage(userId, event.imagePath);
+  }
+
   const deletedAt = new Date().toISOString();
   const payload = buildEventUpsertPayload(event, {
     includeCreatedAt: true,
@@ -714,16 +843,48 @@ export async function flushSyncQueue(userId: string): Promise<boolean> {
 
     for (const item of queue) {
       try {
-        if (item.kind === 'event') {
+        if (item.kind === 'storage_delete') {
+          const ok = await removeEventImageFromStorage(item.path);
+          if (!ok) throw new Error(`Failed to delete storage file ${item.path}`);
+        } else if (item.kind === 'event') {
+          let payloadToSend = item.payload;
+          let uploadedImageMeta:
+            | { imagePath: string; imageName: string }
+            | undefined;
+
+          if (!item.payload.deleted_at && item.needsMediaUpload) {
+            const cachedList = await loadStoredEvents(loadCustomCategories());
+            const cachedMatch = cachedList.find((e) => e.id === item.id);
+            if (cachedMatch?.imageUrl?.startsWith('data:')) {
+              const uploaded = await uploadEventImageFromDataUrl({
+                userId,
+                eventId: item.id,
+                dataUrl: cachedMatch.imageUrl,
+                originalFileName: cachedMatch.imageName,
+                previousImagePath: item.previousImagePath,
+              });
+              uploadedImageMeta = {
+                imagePath: uploaded.imagePath,
+                imageName: uploaded.imageName,
+              };
+              payloadToSend = {
+                ...item.payload,
+                image_url: null,
+                image_path: uploaded.imagePath,
+                image_name: uploaded.imageName,
+              };
+            }
+          }
+
           const { data, error } = await supabase
             .from('events')
-            .upsert(item.payload, { onConflict: 'user_id,id' })
+            .upsert(payloadToSend, { onConflict: 'user_id,id' })
             .select('id, created_at, updated_at')
             .maybeSingle();
 
           if (error) throw error;
 
-          if (item.payload.deleted_at) {
+          if (payloadToSend.deleted_at) {
             if (owners.events[item.id]) {
               delete owners.events[item.id];
               ownersChanged = true;
@@ -732,16 +893,21 @@ export async function flushSyncQueue(userId: string): Promise<boolean> {
             owners.events[item.id] = userId;
             ownersChanged = true;
 
-            if (data?.updated_at) {
-              const cached = await loadStoredEvents(loadCustomCategories());
-              const match = cached.find((e) => e.id === item.id);
-              if (match) {
-                await putStoredEvent({
-                  ...match,
-                  createdAt: data.created_at || match.createdAt,
-                  updatedAt: data.updated_at,
-                });
-              }
+            const cached = await loadStoredEvents(loadCustomCategories());
+            const match = cached.find((e) => e.id === item.id);
+            if (match && (data?.updated_at || uploadedImageMeta)) {
+              await putStoredEvent({
+                ...match,
+                ...(uploadedImageMeta
+                  ? {
+                      imagePath: uploadedImageMeta.imagePath,
+                      imageName: uploadedImageMeta.imageName,
+                      imageUrl: undefined,
+                    }
+                  : {}),
+                createdAt: data?.created_at || match.createdAt,
+                updatedAt: data?.updated_at || match.updatedAt,
+              });
             }
           }
         } else if (item.kind === 'category') {
@@ -784,7 +950,6 @@ export async function flushSyncQueue(userId: string): Promise<boolean> {
       saveOwnersState(owners);
     }
 
-    // Preserve any newer mutations enqueued while flush was in-flight
     const latestQueue = loadQueue(userId);
     const failedByKey = new Map(remaining.map((r) => [r.key, r]));
     const flushedTimestamps = new Map(queue.map((q) => [q.key, q.queuedAt]));
@@ -793,13 +958,10 @@ export async function flushSyncQueue(userId: string): Promise<boolean> {
     for (const current of latestQueue) {
       const flushedAt = flushedTimestamps.get(current.key);
       if (!flushedAt) {
-        // Added during flush
         nextQueue.push(current);
       } else if (current.queuedAt !== flushedAt) {
-        // Updated during flush — keep newer mutation
         nextQueue.push(current);
       } else if (failedByKey.has(current.key)) {
-        // Failed during flush — keep for retry
         nextQueue.push(current);
       }
     }
@@ -835,8 +997,8 @@ export interface UploadLocalDataResult {
 /**
  * Uploads pre-existing browser-local custom tags and events to the signed-in user's account
  * using `upsert` (`onConflict: 'user_id,id'`) without creating duplicates, keeping each
- * event's original `created_at`, excluding base64 images, and leaving `image_path` /
- * `image_name` empty. Local data is never deleted before or during upload.
+ * event's original `created_at`. Migrates any local base64 images into `event-images`
+ * Storage (`<user_id>/<event_id>.<ext>`), removing local base64 only after upload succeeds.
  */
 export async function uploadLocalDataToAccount(
   userId: string,
@@ -896,11 +1058,32 @@ export async function uploadLocalDataToAccount(
   const stampedForIdb: CalendarEvent[] = [];
 
   for (const event of eventsToUpload) {
-    const payload = buildEventUpsertPayload(event, {
-      includeCreatedAt: true,
-      deletedAt: null,
-    });
     try {
+      let workingEvent = event;
+
+      if (
+        typeof workingEvent.imageUrl === 'string' &&
+        workingEvent.imageUrl.startsWith('data:')
+      ) {
+        const uploaded = await uploadEventImageFromDataUrl({
+          userId,
+          eventId: workingEvent.id,
+          dataUrl: workingEvent.imageUrl,
+          originalFileName: workingEvent.imageName,
+        });
+        workingEvent = {
+          ...workingEvent,
+          imagePath: uploaded.imagePath,
+          imageName: uploaded.imageName,
+          imageUrl: undefined,
+        };
+      }
+
+      const payload = buildEventUpsertPayload(workingEvent, {
+        includeCreatedAt: true,
+        deletedAt: null,
+      });
+
       const { data, error } = await supabase
         .from('events')
         .upsert(payload, { onConflict: 'user_id,id' })
@@ -912,17 +1095,13 @@ export async function uploadLocalDataToAccount(
       dequeueMutationKey(userId, `event:${event.id}`);
       owners.events[event.id] = userId;
 
-      if (data?.updated_at) {
-        const stamped: CalendarEvent = {
-          ...event,
-          createdAt: data.created_at || event.createdAt,
-          updatedAt: data.updated_at,
-        };
-        updatedEventsById[event.id] = stamped;
-        stampedForIdb.push(stamped);
-      } else {
-        updatedEventsById[event.id] = event;
-      }
+      const stamped: CalendarEvent = {
+        ...workingEvent,
+        createdAt: data?.created_at || workingEvent.createdAt,
+        updatedAt: data?.updated_at || workingEvent.updatedAt,
+      };
+      updatedEventsById[event.id] = stamped;
+      stampedForIdb.push(stamped);
     } catch (err) {
       const msg =
         err instanceof Error
@@ -956,7 +1135,8 @@ let activePullPromise: Promise<CloudPullResult> | null = null;
 /**
  * Flushes queued writes, pulls `events`, `custom_categories`, and `user_settings`,
  * removes soft-deleted rows locally, reconciles active rows via `updated_at`,
- * and updates IndexedDB incrementally without clearing the store.
+ * migrates any existing synced events' local base64 attachments into Storage
+ * (removing local base64 only after upload succeeds), and updates IndexedDB incrementally.
  */
 export async function pullAndReconcileCloudState(
   userId: string
@@ -1046,8 +1226,6 @@ export async function pullAndReconcileCloudState(
       }
 
       if (!owners.categories[localTag.id]) {
-        // Pre-existing browser-local custom tag not on server yet:
-        // keep locally intact and surface for user confirmation before uploading.
         mergedCustomMap.set(localTag.id, localTag);
         unuploadedLocalCategories.push(localTag);
       } else {
@@ -1059,7 +1237,7 @@ export async function pullAndReconcileCloudState(
     saveCustomCategories(mergedCustomCategories);
 
     // -------------------------------------------------------------------------
-    // 2. Reconcile events (including soft deletes & updated_at comparison)
+    // 2. Reconcile events (soft deletes, updated_at comparison, & base64 migration)
     // -------------------------------------------------------------------------
     const localEvents = await loadStoredEvents(mergedCustomCategories);
     const localEventById = new Map(localEvents.map((e) => [e.id, e]));
@@ -1073,6 +1251,7 @@ export async function pullAndReconcileCloudState(
     const eventsToUpload: Array<{
       event: CalendarEvent;
       includeCreatedAt: boolean;
+      previousImagePath?: string;
     }> = [];
 
     for (const row of serverEventRows) {
@@ -1114,15 +1293,28 @@ export async function pullAndReconcileCloudState(
         Number.isFinite(serverMs) &&
         localMs > serverMs + 1000
       ) {
-        // Local copy of an already-synced event is strictly newer than server row
         mergedEventsList.push(localEv);
-        eventsToUpload.push({ event: localEv, includeCreatedAt: true });
+        eventsToUpload.push({
+          event: localEv,
+          includeCreatedAt: true,
+          previousImagePath: row.image_path?.trim() || undefined,
+        });
       } else {
         mergedEventsList.push(serverMapped);
         if (JSON.stringify(serverMapped) !== JSON.stringify(localEv)) {
           putMap.set(row.id, serverMapped);
         }
         owners.events[row.id] = userId;
+
+        // First-sync migration: server row has no storage image yet while local cache still holds base64
+        if (
+          !row.image_path &&
+          !row.image_url &&
+          typeof serverMapped.imageUrl === 'string' &&
+          serverMapped.imageUrl.startsWith('data:')
+        ) {
+          eventsToUpload.push({ event: serverMapped, includeCreatedAt: true });
+        }
       }
     }
 
@@ -1137,8 +1329,6 @@ export async function pullAndReconcileCloudState(
       }
 
       if (!owners.events[localEv.id]) {
-        // Pre-existing browser-local event not on server yet:
-        // keep locally intact and surface for user confirmation before uploading.
         mergedEventsList.push(localEv);
         unuploadedLocalEventIds.add(localEv.id);
       } else {
@@ -1221,7 +1411,6 @@ export async function pullAndReconcileCloudState(
             sRow.visible_categories,
             mergedCustomCategories
           );
-          // Keep unuploaded local custom tags visible locally if they were visible locally
           for (const localTag of unuploadedLocalCategories) {
             if (
               localSettingsSnapshot.visibleCategories.includes(localTag.id) &&
@@ -1254,24 +1443,26 @@ export async function pullAndReconcileCloudState(
           shouldPushLocalSettings = true;
         }
       } else {
-        // No user_settings row on server yet -> seed from local settings
         shouldPushLocalSettings = true;
       }
     }
 
     saveOwnersState(owners);
 
-    // Sync any newer edits to already-owned events or user_settings
+    // Sync any newer edits, base64 migrations, or user_settings
     await Promise.all([
-      ...eventsToUpload.map(({ event, includeCreatedAt }) =>
-        syncUpsertEvent(userId, event, { includeCreatedAt })
+      ...eventsToUpload.map(
+        ({ event, includeCreatedAt, previousImagePath }) =>
+          syncUpsertEvent(userId, event, {
+            includeCreatedAt,
+            previousImagePath,
+          })
       ),
       ...(shouldPushLocalSettings
         ? [syncUpsertUserSettings(userId, resolvedSettings)]
         : []),
     ]);
 
-    // Refresh final events from memory if server timestamps updated during upload
     const latestStoredEvents =
       eventsToUpload.length > 0
         ? await loadStoredEvents(mergedCustomCategories)

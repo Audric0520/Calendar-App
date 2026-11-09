@@ -314,20 +314,25 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       setEndTimeText(formatMinutes12h(eMins));
 
       const existingUrl = initialDraft.imageUrl || '';
-      const isExternal = /^https?:\/\//i.test(existingUrl);
+      const isExternal =
+        !initialDraft.imagePath && /^https?:\/\//i.test(existingUrl);
       setImageMode(isExternal ? 'url' : 'upload');
       setUrlInput(isExternal ? existingUrl : '');
       setImageError(null);
       setValidationError(null);
 
       const hasDescOrMedia = Boolean(
-        initialDraft.description?.trim() || initialDraft.imageUrl
+        initialDraft.description?.trim() ||
+          initialDraft.imageUrl ||
+          initialDraft.imagePath
       );
       setScheduleExpanded(false);
       setActivePicker(null);
       setPopoverCoords(null);
       setDetailsExpanded(hasDescOrMedia);
-      setShowAttachmentBox(Boolean(initialDraft.imageUrl));
+      setShowAttachmentBox(
+        Boolean(initialDraft.imageUrl || initialDraft.imagePath)
+      );
       setCategoryExpanded(false);
 
       setCustomModalOpen(false);
@@ -777,9 +782,16 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       setDraft((prev) => ({
         ...prev,
         imageUrl: result.dataUrl,
+        imagePath: undefined,
         imageName: result.fileName,
       }));
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     } catch (err) {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       setImageError(
         err instanceof Error ? err.message : 'Could not process image file.'
       );
@@ -794,6 +806,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       setDraft((prev) => ({
         ...prev,
         imageUrl: undefined,
+        imagePath: undefined,
         imageName: undefined,
       }));
       return;
@@ -801,6 +814,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     setDraft((prev) => ({
       ...prev,
       imageUrl: trimmed,
+      imagePath: undefined,
       imageName: 'External Image URL',
     }));
   };
@@ -1283,7 +1297,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                     />
 
                     {/* Attachment Toggle or Panel */}
-                    {!showAttachmentBox && !view.imageUrl ? (
+                    {!showAttachmentBox && !view.imageUrl && !view.imagePath ? (
                       <button
                         type="button"
                         onClick={() => setShowAttachmentBox(true)}
@@ -1397,21 +1411,31 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                           </p>
                         )}
 
-                        {view.imageUrl && (
+                        {(view.imageUrl || view.imagePath) && (
                           <div className="relative rounded-xl overflow-hidden border border-theme-border bg-black/10">
-                            <SkeletonImage
-                              src={view.imageUrl}
-                              alt="Attachment preview"
-                              rounded="rounded-none"
-                              className="w-full h-40 bg-black/20"
-                              imgClassName="w-full max-h-40 object-cover"
-                              onErrorImage={() =>
-                                setImageError(
-                                  'Unable to load preview from that URL. Check the image address.'
-                                )
-                              }
-                            />
-                            <div className="flex items-center justify-between gap-2 px-3 py-2 bg-theme-surface/95 border-t border-theme-border">
+                            {view.imageUrl && (
+                              <SkeletonImage
+                                src={view.imageUrl}
+                                alt="Attachment preview"
+                                rounded="rounded-none"
+                                className="w-full h-40 bg-black/20"
+                                imgClassName="w-full max-h-40 object-cover"
+                                onErrorImage={() => {
+                                  if (!view.imagePath) {
+                                    setImageError(
+                                      'Unable to load preview from that URL. Check the image address.'
+                                    );
+                                  }
+                                }}
+                              />
+                            )}
+                            <div
+                              className={`flex items-center justify-between gap-2 px-3 py-2 bg-theme-surface/95 ${
+                                view.imageUrl
+                                  ? 'border-t border-theme-border'
+                                  : ''
+                              }`}
+                            >
                               <span className="text-[11px] font-medium text-theme-text-secondary truncate">
                                 {view.imageName || 'Attached image'}
                               </span>
@@ -1423,6 +1447,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                                   setDraft((p) => ({
                                     ...p,
                                     imageUrl: undefined,
+                                    imagePath: undefined,
                                     imageName: undefined,
                                   }));
                                 }}

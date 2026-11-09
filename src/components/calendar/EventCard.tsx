@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { CheckCircle2, Circle, Image as ImageIcon, MapPin, Repeat } from 'lucide-react';
 import { EventOccurrence, ThemeId } from '../../types/calendar';
 import { CategoryMeta, resolveCategoryMeta } from '../../constants/categories';
 import { THEME_DEFINITIONS } from '../../constants/themes';
 import { SkeletonImage } from '../../motion/SkeletonImage';
+import { getOrCreateSignedUrl } from '../../services/imageStorage';
 
 interface EventCardProps {
   occurrence: EventOccurrence;
@@ -28,7 +29,25 @@ export const EventCard: React.FC<EventCardProps> = ({
   onToggleTaskComplete,
 }) => {
   const [imgFailed, setImgFailed] = useState(false);
+  const retriedUrlRef = useRef<string | null>(null);
   const { event, start, end } = occurrence;
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [event.imageUrl]);
+
+  const handleImageError = () => {
+    setImgFailed(true);
+    if (
+      event.imagePath &&
+      event.imageUrl &&
+      !event.imageUrl.startsWith('data:') &&
+      retriedUrlRef.current !== event.imageUrl
+    ) {
+      retriedUrlRef.current = event.imageUrl;
+      void getOrCreateSignedUrl(event.imagePath, { forceRefresh: true });
+    }
+  };
   const cat = resolveCategoryMeta(
     event.category,
     categoryMap,
@@ -93,7 +112,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             rounded="rounded"
             className="shrink-0 w-4 h-4 ring-1 ring-black/10 bg-black/10"
             imgClassName="w-full h-full object-cover"
-            onErrorImage={() => setImgFailed(true)}
+            onErrorImage={handleImageError}
           />
         )}
 
@@ -194,7 +213,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               alt=""
               className="shrink-0 w-7 h-7 ring-1 ring-black/15 shadow-sm bg-black/10"
               imgClassName="w-full h-full object-cover"
-              onErrorImage={() => setImgFailed(true)}
+              onErrorImage={handleImageError}
             />
           )}
         </div>
@@ -206,7 +225,7 @@ export const EventCard: React.FC<EventCardProps> = ({
               alt={event.title}
               className="absolute inset-0"
               imgClassName="w-full h-full object-cover"
-              onErrorImage={() => setImgFailed(true)}
+              onErrorImage={handleImageError}
             />
             <span className="absolute bottom-1 right-1 bg-black/55 text-white rounded px-1 py-0.5 text-[9px] flex items-center gap-0.5 backdrop-blur-sm">
               <ImageIcon className="w-2.5 h-2.5" />

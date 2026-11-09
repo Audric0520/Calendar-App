@@ -79,8 +79,10 @@ export interface CalendarEvent {
   recurrenceUntil?: string;
   /** Optional granular configuration when recurrence === 'custom' */
   customRecurrence?: CustomRecurrenceConfig;
-  /** Base64 Data URL (uploaded file) or external image URL */
+  /** Base64 Data URL (local/pending upload), resolved signed URL, or external https image URL */
   imageUrl?: string;
+  /** Private Supabase Storage object path (`<user_id>/<event_id>.<ext>`) when stored in cloud */
+  imagePath?: string;
   imageName?: string;
   isTask?: boolean;
   completed?: boolean;
@@ -138,6 +140,7 @@ export interface EventDraft {
   recurrenceUntil?: string;
   customRecurrence?: CustomRecurrenceConfig;
   imageUrl?: string;
+  imagePath?: string;
   imageName?: string;
   isTask?: boolean;
   completed?: boolean;
