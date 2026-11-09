@@ -299,7 +299,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Delete
+              Remove
             </button>
 
             <div className="flex items-center gap-2">
