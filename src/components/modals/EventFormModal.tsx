@@ -1578,8 +1578,8 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                                   onDeleteCustomCategory(cat.id);
                                 }}
                                 className="opacity-0 group-hover/tag:opacity-100 focus:opacity-100 mr-1.5 p-1 rounded-md text-theme-text-muted hover:text-rose-500 hover:bg-rose-500/10 transition-opacity"
-                                title={`Delete custom tag "${cat.label}"`}
-                                aria-label={`Delete custom tag ${cat.label}`}
+                                title={`Remove custom tag "${cat.label}"`}
+                                aria-label={`Remove custom tag ${cat.label}`}
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -1707,7 +1707,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               </div>
             </div>
 
-            {/* Bottom Footer Row: Delete (when editing) & Save Pill Button */}
+            {/* Bottom Footer Row: Remove (when editing) & Save Pill Button */}
             <div className="pt-4 flex items-center justify-between gap-3">
               {isEditing && view.id && onDelete ? (
                 <button
@@ -1716,7 +1716,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Delete
+                  Remove
                 </button>
               ) : (
                 <div />

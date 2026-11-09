@@ -91,6 +91,7 @@ import { EventFormModal } from './components/modals/EventFormModal';
 import { EventDetailModal } from './components/modals/EventDetailModal';
 import { ThemeStudioModal } from './components/modals/ThemeStudioModal';
 import { LocalDataUploadModal } from './components/modals/LocalDataUploadModal';
+import { ConfirmRemoveModal } from './components/modals/ConfirmRemoveModal';
 import { ReminderToastStack } from './components/notifications/ReminderToastStack';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -210,6 +211,9 @@ export const App: React.FC = () => {
   );
   const [selectedOccurrence, setSelectedOccurrence] =
     useState<EventOccurrence | null>(null);
+  const [pendingRemoveEventId, setPendingRemoveEventId] = useState<
+    string | null
+  >(null);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [pendingLocalUpload, setPendingLocalUpload] = useState<{
     events: CalendarEvent[];
@@ -844,6 +848,7 @@ export const App: React.FC = () => {
       if (
         formModalOpen ||
         selectedOccurrence ||
+        Boolean(pendingRemoveEventId) ||
         themeStudioOpen ||
         Boolean(pendingLocalUpload)
       ) {
@@ -867,6 +872,7 @@ export const App: React.FC = () => {
     handleChangeView,
     handleJumpToday,
     pendingLocalUpload,
+    pendingRemoveEventId,
     selectedDate,
     selectedOccurrence,
     themeStudioOpen,
@@ -940,8 +946,35 @@ export const App: React.FC = () => {
     [persistAndSyncEvent]
   );
 
-  const handleDeleteEvent = useCallback((eventId: string) => {
+  const pendingRemoveTarget = useMemo(
+    () =>
+      pendingRemoveEventId
+        ? events.find((e) => e.id === pendingRemoveEventId) ?? null
+        : null,
+    [events, pendingRemoveEventId]
+  );
+
+  useEffect(() => {
+    if (pendingRemoveEventId && !pendingRemoveTarget) {
+      setPendingRemoveEventId(null);
+    }
+  }, [pendingRemoveEventId, pendingRemoveTarget]);
+
+  const handleRequestRemoveEvent = useCallback((eventId: string) => {
+    if (!eventsRef.current.some((e) => e.id === eventId)) return;
+    setPendingRemoveEventId(eventId);
+  }, []);
+
+  const handleCancelRemoveEvent = useCallback(() => {
+    setPendingRemoveEventId(null);
+  }, []);
+
+  const handleConfirmRemoveEvent = useCallback(() => {
+    if (!pendingRemoveEventId) return;
+    const eventId = pendingRemoveEventId;
     const targetEvent = eventsRef.current.find((e) => e.id === eventId);
+
+    setPendingRemoveEventId(null);
     setEvents((prev) => prev.filter((e) => e.id !== eventId));
     setSelectedOccurrence(null);
     setFormModalOpen(false);
@@ -955,7 +988,7 @@ export const App: React.FC = () => {
         }
       })();
     }
-  }, []);
+  }, [pendingRemoveEventId]);
 
   const handleToggleTaskComplete = useCallback(
     (eventId: string, e?: React.MouseEvent) => {
@@ -1362,7 +1395,7 @@ export const App: React.FC = () => {
         onDeleteCustomCategory={handleDeleteCustomCategory}
         onClose={() => setFormModalOpen(false)}
         onSave={handleSaveDraft}
-        onDelete={handleDeleteEvent}
+        onDelete={handleRequestRemoveEvent}
       />
 
       {/* Event Detail Modal (with Full Image Preview & Lightbox) */}
@@ -1371,9 +1404,16 @@ export const App: React.FC = () => {
         categoryMap={categoryMap}
         onClose={() => setSelectedOccurrence(null)}
         onEdit={handleEditOccurrence}
-        onDelete={handleDeleteEvent}
+        onDelete={handleRequestRemoveEvent}
         onDuplicate={handleDuplicateOccurrence}
         onToggleTaskComplete={handleToggleTaskComplete}
+      />
+
+      {/* Remove Event / Task Confirmation Modal */}
+      <ConfirmRemoveModal
+        target={pendingRemoveTarget}
+        onCancel={handleCancelRemoveEvent}
+        onConfirm={handleConfirmRemoveEvent}
       />
 
       {/* Dynamic Weekly & Monthly Theme Engine Studio */}

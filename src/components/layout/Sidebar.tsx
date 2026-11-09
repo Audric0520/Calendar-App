@@ -215,8 +215,8 @@ const ScopeTagBlock: React.FC<ScopeTagBlockProps> = ({
                     type="button"
                     onClick={() => onDeleteCustomCategory(cat.id)}
                     className="opacity-0 group-hover/sidecat:opacity-100 focus:opacity-100 p-1 rounded-md text-theme-text-muted hover:text-rose-500 transition-opacity"
-                    title={`Delete "${cat.label}"`}
-                    aria-label={`Delete ${cat.label}`}
+                    title={`Remove "${cat.label}"`}
+                    aria-label={`Remove ${cat.label}`}
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
