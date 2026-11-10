@@ -104,16 +104,74 @@ function formatMinutes12h(mins: number): string {
   return `${h12}:${String(mm).padStart(2, '0')}${suffix}`;
 }
 
-function parseFlexibleTimeToMinutes(raw: string): number | null {
+export interface ParsedTypedTime {
+  minutes: number;
+  /** True when the user explicitly wrote a 2-digit minute (e.g. "8:07", "1130") */
+  hasExplicitTwoDigitMinutes: boolean;
+}
+
+/**
+ * Parses live or committed user input in the Start / End time chips.
+ *
+ * Supports:
+ * - Bare hours ("8" -> 8:00am, "3" -> 3:00pm, "12" -> 12:00pm) using Google
+ *   Calendar's daytime heuristic (7..11 -> AM, 12 & 1..6 -> PM)
+ * - Partial colon inputs ("11:" -> 11:00, "11:3" -> 11:30, "8:1" -> 8:10)
+ * - Full colon inputs ("8:15", "8:05am", "3:30pm", "15:45", "03:00")
+ * - Compact 3/4-digit inputs ("830" -> 8:30am, "130" -> 1:30pm, "1130" -> 11:30am)
+ * - End-time context promotion: when no explicit am/pm is typed and the daytime
+ *   candidate falls at or before `startMinutes`, shifts +12h into PM when valid.
+ */
+export function parseTypedTimeInput(
+  raw: string,
+  context: { isEndTime: boolean; startMinutes: number } = {
+    isEndTime: false,
+    startMinutes: 0,
+  }
+): ParsedTypedTime | null {
   const cleaned = raw.trim().toLowerCase();
-  const match = cleaned.match(/^(\d{1,2})(?::(\d{2}))?\s*(a|am|p|pm)?$/);
-  if (!match) return null;
+  if (!cleaned) return null;
 
-  let hours = Number(match[1]);
-  const minutes = match[2] !== undefined ? Number(match[2]) : 0;
-  const meridiem = match[3];
+  let rawHourStr: string;
+  let minutes = 0;
+  let hasExplicitTwoDigitMinutes = false;
+  let meridiem: string | undefined;
 
-  if (Number.isNaN(hours) || Number.isNaN(minutes) || minutes < 0 || minutes > 59) {
+  const colonMatch = cleaned.match(
+    /^(\d{1,2})(?::(\d{0,2}))?\s*(a|am|p|pm)?$/
+  );
+
+  if (colonMatch) {
+    rawHourStr = colonMatch[1];
+    const minStr = colonMatch[2];
+    meridiem = colonMatch[3];
+
+    if (minStr !== undefined && minStr.length > 0) {
+      if (minStr.length === 1) {
+        const d = Number(minStr);
+        minutes = d <= 5 ? d * 10 : d;
+      } else {
+        minutes = Number(minStr);
+        hasExplicitTwoDigitMinutes = true;
+      }
+    }
+  } else {
+    const compactMatch = cleaned.match(/^(\d{3,4})\s*(a|am|p|pm)?$/);
+    if (!compactMatch) return null;
+    const digits = compactMatch[1];
+    meridiem = compactMatch[2];
+    rawHourStr = digits.slice(0, digits.length - 2);
+    minutes = Number(digits.slice(-2));
+    hasExplicitTwoDigitMinutes = true;
+  }
+
+  let hours = Number(rawHourStr);
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
     return null;
   }
 
@@ -125,11 +183,73 @@ function parseFlexibleTimeToMinutes(raw: string): number | null {
     } else if (isPm) {
       hours += 12;
     }
-  } else {
-    if (hours < 0 || hours > 23) return null;
+    return {
+      minutes: hours * 60 + minutes,
+      hasExplicitTwoDigitMinutes,
+    };
   }
 
-  return hours * 60 + minutes;
+  if (hours < 0 || hours > 23) return null;
+
+  // Explicit 24-hour forms: 0 ("0", "00"), leading zero ("01".."09"), or 13..23
+  const hasLeadingZero = rawHourStr.length === 2 && rawHourStr.startsWith('0');
+  if (hours === 0 || hasLeadingZero || hours >= 13) {
+    return {
+      minutes: hours * 60 + minutes,
+      hasExplicitTwoDigitMinutes,
+    };
+  }
+
+  // Ambiguous 1..12 without am/pm: 7..11 -> AM, 12 & 1..6 -> PM
+  let h24: number;
+  if (hours === 12) {
+    h24 = 12;
+  } else if (hours >= 7 && hours <= 11) {
+    h24 = hours;
+  } else {
+    h24 = hours + 12;
+  }
+
+  let resolvedMins = h24 * 60 + minutes;
+
+  if (context.isEndTime) {
+    if (hours >= 1 && hours <= 6 && context.startMinutes < 7 * 60) {
+      const amCandidate = hours * 60 + minutes;
+      if (amCandidate > context.startMinutes) {
+        resolvedMins = amCandidate;
+      }
+    }
+
+    if (resolvedMins <= context.startMinutes) {
+      const shiftedPm = resolvedMins + 12 * 60;
+      if (shiftedPm > context.startMinutes && shiftedPm < 24 * 60) {
+        resolvedMins = shiftedPm;
+      }
+    }
+  }
+
+  return {
+    minutes: resolvedMins,
+    hasExplicitTwoDigitMinutes,
+  };
+}
+
+export function findClosestOptionMinutes(
+  options: number[],
+  targetMinutes: number
+): number | null {
+  if (options.length === 0) return null;
+  let best = options[0];
+  let bestDiff = Math.abs(best - targetMinutes);
+  for (let i = 1; i < options.length; i += 1) {
+    const candidate = options[i];
+    const diff = Math.abs(candidate - targetMinutes);
+    if (diff < bestDiff || (diff === bestDiff && candidate > best)) {
+      best = candidate;
+      bestDiff = diff;
+    }
+  }
+  return best;
 }
 
 function formatDurationLabel(diffMins: number): string {
@@ -145,15 +265,27 @@ function formatDurationLabel(diffMins: number): string {
   return `${hrs} ${hrs === 1 ? 'hr' : 'hrs'} ${rem} ${rem === 1 ? 'min' : 'mins'}`;
 }
 
-function buildStartTimeOptions(currentStartMins: number): number[] {
+function buildStartTimeOptions(
+  currentStartMins: number,
+  extraSuggestedMins?: number | null
+): number[] {
   const list: number[] = [];
   for (let m = 0; m < 24 * 60; m += 15) {
     list.push(m);
   }
   if (!list.includes(currentStartMins)) {
     list.push(currentStartMins);
-    list.sort((a, b) => a - b);
   }
+  if (
+    extraSuggestedMins !== null &&
+    extraSuggestedMins !== undefined &&
+    extraSuggestedMins >= 0 &&
+    extraSuggestedMins < 24 * 60 &&
+    !list.includes(extraSuggestedMins)
+  ) {
+    list.push(extraSuggestedMins);
+  }
+  list.sort((a, b) => a - b);
   return list;
 }
 
@@ -172,7 +304,8 @@ function buildStartTimeOptions(currentStartMins: number): number[] {
  */
 function buildEndTimeOptions(
   startMins: number,
-  currentEndMins: number
+  currentEndMins: number,
+  extraSuggestedMins?: number | null
 ): { mins: number; durationLabel: string }[] {
   const END_OF_DAY = 24 * 60 - 1;
   const safeStart = Math.max(0, Math.min(END_OF_DAY, startMins));
@@ -189,6 +322,15 @@ function buildEndTimeOptions(
   // Keep the draft's own end visible, but only when it obeys the same rule.
   if (currentEndMins > safeStart && currentEndMins <= END_OF_DAY) {
     minsSet.add(currentEndMins);
+  }
+
+  if (
+    extraSuggestedMins !== null &&
+    extraSuggestedMins !== undefined &&
+    extraSuggestedMins > safeStart &&
+    extraSuggestedMins <= END_OF_DAY
+  ) {
+    minsSet.add(extraSuggestedMins);
   }
 
   // Edge case: a start at 23:45+ leaves no room for a later end on this day.
@@ -229,6 +371,9 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   );
   const [startTimeText, setStartTimeText] = useState<string>('');
   const [endTimeText, setEndTimeText] = useState<string>('');
+  const [highlightedTimeOverride, setHighlightedTimeOverride] = useState<
+    number | null
+  >(null);
   const [popoverCoords, setPopoverCoords] = useState<{
     top: number;
     left: number;
@@ -263,6 +408,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   const endTimeInputRef = useRef<HTMLInputElement | null>(null);
   const repeatChipRef = useRef<HTMLButtonElement | null>(null);
   const floatingPopoverRef = useRef<HTMLDivElement | null>(null);
+  const timeListboxRef = useRef<HTMLDivElement | null>(null);
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
   /**
    * Set while a time value is being written programmatically (dropdown pick or
@@ -328,6 +474,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       );
       setScheduleExpanded(false);
       setActivePicker(null);
+      setHighlightedTimeOverride(null);
       setPopoverCoords(null);
       setDetailsExpanded(hasDescOrMedia);
       setShowAttachmentBox(
@@ -357,9 +504,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       setActivePicker(null);
+      setHighlightedTimeOverride(null);
       setPopoverCoords(null);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    setHighlightedTimeOverride(null);
+  }, [activePicker]);
 
   // Switching between Event and Task swaps the tag set, so any half-finished
   // "create tag" form is closed to avoid filing a tag under the wrong type.
@@ -441,15 +593,126 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     };
   }, [activePicker, draft.allDay, isOpen, scheduleExpanded, updatePopoverPosition]);
 
-  // Auto-scroll active time option to center when Start/End time dropdown opens
+  const parsedStartDate = useMemo(
+    () => parseLocalDateTime(draft.start),
+    [draft.start]
+  );
+  const parsedEndDate = useMemo(
+    () => parseLocalDateTime(draft.end),
+    [draft.end]
+  );
+
+  const startMinutes = getMinutesFromDate(parsedStartDate);
+  const endMinutes = getMinutesFromDate(parsedEndDate);
+
+  const parsedStartSuggestion = useMemo(
+    () =>
+      parseTypedTimeInput(startTimeText, {
+        isEndTime: false,
+        startMinutes,
+      }),
+    [startMinutes, startTimeText]
+  );
+
+  const parsedEndSuggestion = useMemo(
+    () =>
+      parseTypedTimeInput(endTimeText, {
+        isEndTime: true,
+        startMinutes,
+      }),
+    [endTimeText, startMinutes]
+  );
+
+  const startTimeOptions = useMemo(
+    () =>
+      buildStartTimeOptions(
+        startMinutes,
+        parsedStartSuggestion?.hasExplicitTwoDigitMinutes
+          ? parsedStartSuggestion.minutes
+          : null
+      ),
+    [parsedStartSuggestion, startMinutes]
+  );
+
+  const endTimeOptions = useMemo(
+    () =>
+      buildEndTimeOptions(
+        startMinutes,
+        endMinutes,
+        parsedEndSuggestion?.hasExplicitTwoDigitMinutes
+          ? parsedEndSuggestion.minutes
+          : null
+      ),
+    [endMinutes, parsedEndSuggestion, startMinutes]
+  );
+
+  const highlightedStartMinutes = useMemo(() => {
+    if (
+      highlightedTimeOverride !== null &&
+      startTimeOptions.includes(highlightedTimeOverride)
+    ) {
+      return highlightedTimeOverride;
+    }
+    if (parsedStartSuggestion !== null) {
+      return findClosestOptionMinutes(
+        startTimeOptions,
+        parsedStartSuggestion.minutes
+      );
+    }
+    return startMinutes;
+  }, [
+    highlightedTimeOverride,
+    parsedStartSuggestion,
+    startMinutes,
+    startTimeOptions,
+  ]);
+
+  const highlightedEndMinutes = useMemo(() => {
+    const endOptionMins = endTimeOptions.map((o) => o.mins);
+    if (
+      highlightedTimeOverride !== null &&
+      endOptionMins.includes(highlightedTimeOverride)
+    ) {
+      return highlightedTimeOverride;
+    }
+    if (parsedEndSuggestion !== null) {
+      return findClosestOptionMinutes(
+        endOptionMins,
+        parsedEndSuggestion.minutes
+      );
+    }
+    return endOptionMins.includes(endMinutes)
+      ? endMinutes
+      : endOptionMins[0] ?? null;
+  }, [
+    endMinutes,
+    endTimeOptions,
+    highlightedTimeOverride,
+    parsedEndSuggestion,
+  ]);
+
+  const activeHighlightedMinutes =
+    activePicker === 'startTime'
+      ? highlightedStartMinutes
+      : activePicker === 'endTime'
+        ? highlightedEndMinutes
+        : null;
+
+  // Auto-scroll highlighted time suggestion to center when dropdown opens or user types
   useEffect(() => {
     if (activePicker === 'startTime' || activePicker === 'endTime') {
       const raf = window.requestAnimationFrame(() => {
-        activeOptionRef.current?.scrollIntoView({ block: 'center' });
+        const listEl = timeListboxRef.current;
+        const optEl = activeOptionRef.current;
+        if (listEl && optEl) {
+          const targetScrollTop =
+            optEl.offsetTop - listEl.clientHeight / 2 + optEl.offsetHeight / 2;
+          listEl.scrollTop = Math.max(0, targetScrollTop);
+        }
       });
       return () => window.cancelAnimationFrame(raf);
     }
-  }, [activePicker, popoverCoords]);
+  }, [activeHighlightedMinutes, activePicker, popoverCoords]);
 
   // Close floating picker on outside click
   useEffect(() => {
@@ -481,27 +744,6 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [activePicker, customModalOpen, isOpen, onClose]);
-
-  const parsedStartDate = useMemo(
-    () => parseLocalDateTime(draft.start),
-    [draft.start]
-  );
-  const parsedEndDate = useMemo(
-    () => parseLocalDateTime(draft.end),
-    [draft.end]
-  );
-
-  const startMinutes = getMinutesFromDate(parsedStartDate);
-  const endMinutes = getMinutesFromDate(parsedEndDate);
-
-  const startTimeOptions = useMemo(
-    () => buildStartTimeOptions(startMinutes),
-    [startMinutes]
-  );
-  const endTimeOptions = useMemo(
-    () => buildEndTimeOptions(startMinutes, endMinutes),
-    [endMinutes, startMinutes]
-  );
 
   const miniCalendarDays = useMemo(() => {
     const firstOfMonth = startOfMonth(calendarMonth);
@@ -626,22 +868,54 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
   const commitTypedStartTime = () => {
     if (suppressTimeBlurCommitRef.current) return;
-    const parsed = parseFlexibleTimeToMinutes(startTimeText);
+    if (
+      activePicker === 'startTime' &&
+      highlightedTimeOverride !== null &&
+      startTimeOptions.includes(highlightedTimeOverride)
+    ) {
+      setHighlightedTimeOverride(null);
+      applyStartMinutes(highlightedTimeOverride);
+      return;
+    }
+    const parsed = parseTypedTimeInput(startTimeText, {
+      isEndTime: false,
+      startMinutes,
+    });
     if (parsed === null) {
       setStartTimeText(formatMinutes12h(startMinutes));
       return;
     }
-    applyStartMinutes(parsed);
+    const targetMins = parsed.hasExplicitTwoDigitMinutes
+      ? parsed.minutes
+      : highlightedStartMinutes ?? parsed.minutes;
+    applyStartMinutes(targetMins);
   };
 
   const commitTypedEndTime = () => {
     if (suppressTimeBlurCommitRef.current) return;
-    const parsed = parseFlexibleTimeToMinutes(endTimeText);
+    const endOptionMins = endTimeOptions.map((o) => o.mins);
+    if (
+      activePicker === 'endTime' &&
+      highlightedTimeOverride !== null &&
+      endOptionMins.includes(highlightedTimeOverride)
+    ) {
+      setHighlightedTimeOverride(null);
+      applyEndMinutes(highlightedTimeOverride);
+      return;
+    }
+    const parsed = parseTypedTimeInput(endTimeText, {
+      isEndTime: true,
+      startMinutes,
+    });
     if (parsed === null) {
       setEndTimeText(formatMinutes12h(endMinutes));
       return;
     }
-    applyEndMinutes(parsed);
+    const targetMins =
+      parsed.minutes <= startMinutes || parsed.hasExplicitTwoDigitMinutes
+        ? parsed.minutes
+        : highlightedEndMinutes ?? parsed.minutes;
+    applyEndMinutes(targetMins);
   };
 
   const handleToggleAllDay = (checked: boolean) => {
@@ -830,8 +1104,48 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       return;
     }
 
-    const sDate = parseLocalDateTime(view.start);
-    const eDate = parseLocalDateTime(view.end);
+    let nextStart = draft.start;
+    let nextEnd = draft.end;
+
+    if (!view.allDay) {
+      let resolvedStartMins = startMinutes;
+      if (startTimeText !== formatMinutes12h(startMinutes)) {
+        const pStart = parseTypedTimeInput(startTimeText, {
+          isEndTime: false,
+          startMinutes,
+        });
+        if (pStart !== null) {
+          resolvedStartMins = pStart.hasExplicitTwoDigitMinutes
+            ? pStart.minutes
+            : highlightedStartMinutes ?? pStart.minutes;
+          nextStart = `${dateStr}T${minutesToHHmm(resolvedStartMins)}`;
+        }
+      }
+
+      if (endTimeText !== formatMinutes12h(endMinutes)) {
+        const pEnd = parseTypedTimeInput(endTimeText, {
+          isEndTime: true,
+          startMinutes: resolvedStartMins,
+        });
+        if (pEnd !== null) {
+          const endCandidates = buildEndTimeOptions(
+            resolvedStartMins,
+            endMinutes,
+            pEnd.hasExplicitTwoDigitMinutes ? pEnd.minutes : null
+          ).map((o) => o.mins);
+          const resolvedEndMins =
+            pEnd.minutes <= resolvedStartMins ||
+            pEnd.hasExplicitTwoDigitMinutes
+              ? pEnd.minutes
+              : findClosestOptionMinutes(endCandidates, pEnd.minutes) ??
+                pEnd.minutes;
+          nextEnd = `${dateStr}T${minutesToHHmm(resolvedEndMins)}`;
+        }
+      }
+    }
+
+    const sDate = parseLocalDateTime(nextStart);
+    const eDate = parseLocalDateTime(nextEnd);
     if (eDate < sDate) {
       setValidationError('End time must be after start time.');
       setScheduleExpanded(true);
@@ -840,6 +1154,8 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
     onSave({
       ...draft,
+      start: nextStart,
+      end: nextEnd,
       title: cleanTitle,
       location: draft.location.trim(),
       description: draft.description.trim(),
@@ -1084,10 +1400,46 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                               e.currentTarget.select();
                             }}
                             onClick={() => setActivePicker('startTime')}
-                            onChange={(e) => setStartTimeText(e.target.value)}
+                            onChange={(e) => {
+                              setStartTimeText(e.target.value);
+                              setHighlightedTimeOverride(null);
+                              if (activePicker !== 'startTime') {
+                                setActivePicker('startTime');
+                              }
+                            }}
                             onBlur={commitTypedStartTime}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
+                              if (
+                                e.key === 'ArrowDown' ||
+                                e.key === 'ArrowUp'
+                              ) {
+                                e.preventDefault();
+                                if (activePicker !== 'startTime') {
+                                  setActivePicker('startTime');
+                                  return;
+                                }
+                                if (startTimeOptions.length === 0) return;
+                                const curIdx =
+                                  highlightedStartMinutes !== null
+                                    ? startTimeOptions.indexOf(
+                                        highlightedStartMinutes
+                                      )
+                                    : -1;
+                                const delta = e.key === 'ArrowDown' ? 1 : -1;
+                                const nextIdx =
+                                  curIdx === -1
+                                    ? 0
+                                    : Math.max(
+                                        0,
+                                        Math.min(
+                                          startTimeOptions.length - 1,
+                                          curIdx + delta
+                                        )
+                                      );
+                                setHighlightedTimeOverride(
+                                  startTimeOptions[nextIdx]
+                                );
+                              } else if (e.key === 'Enter') {
                                 e.preventDefault();
                                 commitTypedStartTime();
                                 setActivePicker(null);
@@ -1125,10 +1477,49 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                               e.currentTarget.select();
                             }}
                             onClick={() => setActivePicker('endTime')}
-                            onChange={(e) => setEndTimeText(e.target.value)}
+                            onChange={(e) => {
+                              setEndTimeText(e.target.value);
+                              setHighlightedTimeOverride(null);
+                              if (activePicker !== 'endTime') {
+                                setActivePicker('endTime');
+                              }
+                            }}
                             onBlur={commitTypedEndTime}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
+                              if (
+                                e.key === 'ArrowDown' ||
+                                e.key === 'ArrowUp'
+                              ) {
+                                e.preventDefault();
+                                if (activePicker !== 'endTime') {
+                                  setActivePicker('endTime');
+                                  return;
+                                }
+                                if (endTimeOptions.length === 0) return;
+                                const endOptionMins = endTimeOptions.map(
+                                  (o) => o.mins
+                                );
+                                const curIdx =
+                                  highlightedEndMinutes !== null
+                                    ? endOptionMins.indexOf(
+                                        highlightedEndMinutes
+                                      )
+                                    : -1;
+                                const delta = e.key === 'ArrowDown' ? 1 : -1;
+                                const nextIdx =
+                                  curIdx === -1
+                                    ? 0
+                                    : Math.max(
+                                        0,
+                                        Math.min(
+                                          endOptionMins.length - 1,
+                                          curIdx + delta
+                                        )
+                                      );
+                                setHighlightedTimeOverride(
+                                  endOptionMins[nextIdx]
+                                );
+                              } else if (e.key === 'Enter') {
                                 e.preventDefault();
                                 commitTypedEndTime();
                                 setActivePicker(null);
@@ -1850,19 +2241,20 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
           {/* 2. START TIME DROPDOWN (Screenshot 2: 15-min slots) */}
           {activePicker === 'startTime' && (
             <div
+              ref={timeListboxRef}
               role="listbox"
               aria-label="Start time options"
-              className="max-h-[210px] overflow-y-auto themed-scroll py-1.5"
+              className="relative max-h-[210px] overflow-y-auto themed-scroll py-1.5"
             >
               {startTimeOptions.map((mins) => {
-                const isSelected = mins === startMinutes;
+                const isHighlighted = mins === highlightedStartMinutes;
                 return (
                   <button
                     key={mins}
-                    ref={isSelected ? activeOptionRef : null}
+                    ref={isHighlighted ? activeOptionRef : null}
                     type="button"
                     role="option"
-                    aria-selected={isSelected}
+                    aria-selected={isHighlighted}
                     // Left-click is applied on `onPointerDown` (covers mouse, pen
                     // and touch) so the choice lands before the input can blur.
                     // `preventDefault` keeps focus inside the input so the picker
@@ -1880,7 +2272,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                       handlePickStartTime(mins);
                     }}
                     className={`w-full px-4 py-2.5 text-left text-sm tabular-nums transition-colors ${
-                      isSelected
+                      isHighlighted
                         ? 'bg-theme-elevated text-theme-text font-semibold'
                         : 'text-theme-text hover:bg-theme-cell-hover'
                     }`}
@@ -1895,19 +2287,20 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
           {/* 3. END TIME DROPDOWN WITH DURATION LABELS (Screenshot 3) */}
           {activePicker === 'endTime' && (
             <div
+              ref={timeListboxRef}
               role="listbox"
               aria-label="End time options"
-              className="max-h-[210px] overflow-y-auto themed-scroll py-1.5"
+              className="relative max-h-[210px] overflow-y-auto themed-scroll py-1.5"
             >
               {endTimeOptions.map(({ mins, durationLabel }) => {
-                const isSelected = mins === endMinutes;
+                const isHighlighted = mins === highlightedEndMinutes;
                 return (
                   <button
                     key={mins}
-                    ref={isSelected ? activeOptionRef : null}
+                    ref={isHighlighted ? activeOptionRef : null}
                     type="button"
                     role="option"
-                    aria-selected={isSelected}
+                    aria-selected={isHighlighted}
                     onPointerDown={(e) => {
                       if (e.button !== 0) return;
                       e.preventDefault();
@@ -1918,7 +2311,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                       handlePickEndTime(mins);
                     }}
                     className={`w-full px-4 py-2.5 text-left text-sm tabular-nums transition-colors ${
-                      isSelected
+                      isHighlighted
                         ? 'bg-theme-elevated text-theme-text font-semibold'
                         : 'text-theme-text hover:bg-theme-cell-hover'
                     }`}
