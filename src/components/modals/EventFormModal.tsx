@@ -2399,6 +2399,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       <CustomRecurrenceModal
         isOpen={customModalOpen}
         startDateStr={view.start}
+        endDateStr={view.end}
         initialConfig={view.customRecurrence}
         onCancel={() => setCustomModalOpen(false)}
         onDone={handleCustomRecurrenceDone}

@@ -5,10 +5,12 @@ import {
   CustomRecurrenceConfig,
   CustomRepeatEndType,
   CustomRepeatUnit,
+  DayScheduleEntry,
 } from '../../types/calendar';
 import {
   formatDateInput,
   makeDefaultCustomRecurrence,
+  parseHhmmMinutes,
   parseLocalDateTime,
 } from '../../utils/calendarMath';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -20,6 +22,8 @@ import {
 interface CustomRecurrenceModalProps {
   isOpen: boolean;
   startDateStr: string;
+  /** Optional event end time ("HH:mm") used to prefill per-day end inputs. */
+  endDateStr?: string;
   initialConfig?: CustomRecurrenceConfig;
   onCancel: () => void;
   onDone: (config: CustomRecurrenceConfig) => void;
@@ -52,6 +56,7 @@ const DownTriangle: React.FC = () => (
 export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
   isOpen,
   startDateStr,
+  endDateStr,
   initialConfig,
   onCancel,
   onDone,
@@ -66,6 +71,14 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
   const [endType, setEndType] = useState<CustomRepeatEndType>('never');
   const [endDate, setEndDate] = useState<string>('');
   const [occurrencesText, setOccurrencesText] = useState('13');
+
+  // Per-day time overrides (only meaningful when unit === 'week' and >= 2 days selected)
+  const [perDayTimesEnabled, setPerDayTimesEnabled] = useState(false);
+  const [dayTimeInputs, setDayTimeInputs] = useState<Record<
+    number,
+    { start: string; end: string }
+  >>({});
+  const [dayScheduleError, setDayScheduleError] = useState<string | null>(null);
 
   const unitDropdownRef = useRef<HTMLDivElement | null>(null);
   const dateInputRef = useRef<HTMLInputElement | null>(null);
@@ -86,9 +99,52 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
       base.endDate && base.endDate >= startDayIso ? base.endDate : fallbackEnd
     );
     setOccurrencesText(String(Math.max(1, base.occurrences ?? 13)));
+
+    // Load per-day schedule from the config being edited, if any.
+    const defaultStart = (startDateStr.split('T')[1] ?? '09:00').slice(0, 5);
+    const defaultEnd = (endDateStr?.split('T')[1] ?? defaultStart).slice(0, 5);
+
+    const loadedSchedule: Record<number, { start: string; end: string }> = {};
+    if (base.daySchedule && base.daySchedule.length > 0) {
+      for (const entry of base.daySchedule) {
+        const w = entry.weekday;
+        const s = entry.start;
+        const e = entry.end;
+        if (
+          typeof w === 'number' &&
+          w >= 0 &&
+          w <= 6 &&
+          typeof s === 'string' &&
+          typeof e === 'string' &&
+          parseHhmmMinutes(s) !== null &&
+          parseHhmmMinutes(e) !== null
+        ) {
+          loadedSchedule[w] = { start: s, end: e };
+        }
+      }
+    }
+
+    const hasMultiDaySchedule = Object.keys(loadedSchedule).length >= 2;
+    setDayTimeInputs(loadedSchedule);
+    setPerDayTimesEnabled(hasMultiDaySchedule);
+
     setUnitMenuOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialConfig, startDateStr]);
+  }, [isOpen, initialConfig, startDateStr, endDateStr]);
+
+  // Keep per-day inputs aligned with the selected weekdays: seed defaults for
+  // newly selected days and drop inputs for deselected days.
+  useEffect(() => {
+    const defaultStart = (startDateStr.split('T')[1] ?? '09:00').slice(0, 5);
+    const defaultEnd = (endDateStr?.split('T')[1] ?? defaultStart).slice(0, 5);
+    setDayTimeInputs((prev) => {
+      const next: Record<number, { start: string; end: string }> = {};
+      for (const dow of daysOfWeek) {
+        next[dow] = prev[dow] ?? { start: defaultStart, end: defaultEnd };
+      }
+      return next;
+    });
+  }, [daysOfWeek, startDateStr, endDateStr]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -149,10 +205,46 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
   };
 
   const handleConfirm = () => {
+    setDayScheduleError(null);
+
+    let daySchedule: DayScheduleEntry[] | undefined;
+    if (
+      perDayTimesEnabled &&
+      unit === 'week' &&
+      daysOfWeek.length >= 2
+    ) {
+      daySchedule = [];
+      for (const dow of daysOfWeek) {
+        const current = dayTimeInputs[dow];
+        if (!current) continue;
+        const startMins = parseHhmmMinutes(current.start);
+        const endMins = parseHhmmMinutes(current.end);
+        if (startMins === null || endMins === null) {
+          setDayScheduleError(
+            'Please enter a valid start and end time for each selected day.'
+          );
+          return;
+        }
+        if (endMins <= startMins) {
+          setDayScheduleError(
+            'End time must be after start time for each day.'
+          );
+          return;
+        }
+        daySchedule.push({
+          weekday: dow,
+          start: current.start,
+          end: current.end,
+        });
+      }
+      if (daySchedule.length === 0) daySchedule = undefined;
+    }
+
     onDone({
       interval: parsedInterval,
       unit,
       daysOfWeek: unit === 'week' ? daysOfWeek : undefined,
+      daySchedule,
       endType,
       endDate,
       occurrences: parsedOccurrences,
@@ -344,6 +436,101 @@ export const CustomRecurrenceModal: React.FC<CustomRecurrenceModalProps> = ({
                 );
               })}
             </div>
+
+            {/* Per-day start/end overrides when two or more weekdays are selected */}
+            {daysOfWeek.length >= 2 && (
+              <div className="mt-5">
+                <div
+                  role="checkbox"
+                  aria-checked={perDayTimesEnabled}
+                  tabIndex={0}
+                  onClick={() => setPerDayTimesEnabled((p) => !p)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setPerDayTimesEnabled((p) => !p);
+                    }
+                  }}
+                  className="flex items-center gap-2 cursor-pointer select-none"
+                >
+                  <span
+                    className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      perDayTimesEnabled
+                        ? 'border-theme-accent bg-theme-accent text-theme-accent-contrast'
+                        : 'border-theme-text-muted'
+                    }`}
+                  >
+                    {perDayTimesEnabled && (
+                      <span
+                        style={{ backgroundColor: 'var(--t-accent-contrast)' }}
+                        className="w-2.5 h-2.5 rounded-full"
+                      />
+                    )}
+                  </span>
+                  <span className="text-sm font-medium text-theme-text">
+                    Set different times per day
+                  </span>
+                </div>
+
+                {perDayTimesEnabled && (
+                  <div className="mt-3 space-y-2">
+                    {daysOfWeek.map((dow) => {
+                      const day = WEEKDAY_PILLS.find((d) => d.index === dow);
+                      const current =
+                        dayTimeInputs[dow] ?? {
+                          start: (startDateStr.split('T')[1] ?? '09:00').slice(
+                            0,
+                            5
+                          ),
+                          end: (endDateStr?.split('T')[1] ?? '09:00').slice(
+                            0,
+                            5
+                          ),
+                        };
+                      return (
+                        <div key={dow} className="flex items-center gap-2">
+                          <span
+                            className="w-20 shrink-0 text-sm text-theme-text-secondary"
+                          >
+                            {day?.full}
+                          </span>
+                          <input
+                            type="time"
+                            value={current.start}
+                            onChange={(e) =>
+                              setDayTimeInputs((prev) => ({
+                                ...prev,
+                                [dow]: { ...prev[dow], start: e.target.value },
+                              }))
+                            }
+                            className="w-20 rounded-lg border border-theme-border bg-theme-surface px-2 py-1.5 text-xs text-theme-text focus:outline-none focus:border-theme-border-strong"
+                          />
+                          <span className="text-theme-text-muted px-1">
+                            –
+                          </span>
+                          <input
+                            type="time"
+                            value={current.end}
+                            onChange={(e) =>
+                              setDayTimeInputs((prev) => ({
+                                ...prev,
+                                [dow]: { ...prev[dow], end: e.target.value },
+                              }))
+                            }
+                            className="w-20 rounded-lg border border-theme-border bg-theme-surface px-2 py-1.5 text-xs text-theme-text focus:outline-none focus:border-theme-border-strong"
+                          />
+                        </div>
+                      );
+                    })}
+                    {dayScheduleError && (
+                      <p className="text-xs font-semibold text-rose-500">
+                        {dayScheduleError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

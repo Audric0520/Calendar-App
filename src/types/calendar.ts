@@ -20,6 +20,20 @@ export type CustomRepeatUnit = 'day' | 'week' | 'month' | 'year';
 
 export type CustomRepeatEndType = 'never' | 'on' | 'after';
 
+/**
+ * Per-weekday override for a custom weekly series.
+ * Times are local wall-clock "HH:mm" strings; `end` must be after `start`
+ * on the same day (no overnight events).
+ */
+export interface DayScheduleEntry {
+  /** 0 = Sunday .. 6 = Saturday */
+  weekday: number;
+  /** Local "HH:mm" start time for this weekday */
+  start: string;
+  /** Local "HH:mm" end time for this weekday (after `start`) */
+  end: string;
+}
+
 export interface CustomRecurrenceConfig {
   /** Repeat every N units (>= 1) */
   interval: number;
@@ -27,6 +41,8 @@ export interface CustomRecurrenceConfig {
   unit: CustomRepeatUnit;
   /** Selected weekdays when unit === 'week' (0 = Sunday .. 6 = Saturday) */
   daysOfWeek?: number[];
+  /** Optional per-weekday start/end overrides when unit === 'week' */
+  daySchedule?: DayScheduleEntry[];
   /** Termination mode */
   endType: CustomRepeatEndType;
   /** Inclusive end date "YYYY-MM-DD" when endType === 'on' */
