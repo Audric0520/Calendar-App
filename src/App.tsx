@@ -3,9 +3,11 @@ import {
   addDays,
   addMonths,
   addWeeks,
+  addYears,
   endOfMonth,
   endOfWeek,
   format,
+  startOfDay,
   startOfMonth,
   startOfWeek,
   subDays,
@@ -19,6 +21,7 @@ import {
   CalendarView,
   CategoryScope,
   CategoryTag,
+  DeleteScope,
   EventCategory,
   EventDraft,
   EventOccurrence,
@@ -67,9 +70,13 @@ import {
 import { useAuth } from './contexts/AuthContext';
 import { unlockAudioOnFirstInteraction } from './services/sound';
 import {
+  countEventOccurrencesUpTo,
   expandEventsInRange,
+  formatDateInput,
   formatLocalDateTime,
   getMonthWeeks,
+  parseLocalDateTime,
+  sanitizeExceptionDates,
 } from './utils/calendarMath';
 import {
   getWeekKey,
@@ -92,6 +99,7 @@ import { EventDetailModal } from './components/modals/EventDetailModal';
 import { ThemeStudioModal } from './components/modals/ThemeStudioModal';
 import { LocalDataUploadModal } from './components/modals/LocalDataUploadModal';
 import { ConfirmRemoveModal } from './components/modals/ConfirmRemoveModal';
+import { DeleteRecurrenceModal } from './components/modals/DeleteRecurrenceModal';
 import { ReminderToastStack } from './components/notifications/ReminderToastStack';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -214,6 +222,14 @@ export const App: React.FC = () => {
   const [pendingRemoveEventId, setPendingRemoveEventId] = useState<
     string | null
   >(null);
+  /**
+   * A recurring series being deleted by scope. Holds the event id and the
+   * clicked occurrence's local date ("YYYY-MM-DD").
+   */
+  const [pendingDeleteScope, setPendingDeleteScope] = useState<{
+    eventId: string;
+    date: string;
+  } | null>(null);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [pendingLocalUpload, setPendingLocalUpload] = useState<{
     events: CalendarEvent[];
@@ -850,7 +866,8 @@ export const App: React.FC = () => {
         selectedOccurrence ||
         Boolean(pendingRemoveEventId) ||
         themeStudioOpen ||
-        Boolean(pendingLocalUpload)
+        Boolean(pendingLocalUpload) ||
+        Boolean(pendingDeleteScope)
       ) {
         return;
       }
@@ -960,10 +977,31 @@ export const App: React.FC = () => {
     }
   }, [pendingRemoveEventId, pendingRemoveTarget]);
 
-  const handleRequestRemoveEvent = useCallback((eventId: string) => {
-    if (!eventsRef.current.some((e) => e.id === eventId)) return;
-    setPendingRemoveEventId(eventId);
-  }, []);
+  const handleRequestRemoveEvent = useCallback(
+    (eventId: string, occurrenceDate?: string) => {
+      const targetEvent = eventsRef.current.find((e) => e.id === eventId);
+      if (!targetEvent) return;
+
+      const isRecurring =
+        Boolean(targetEvent.recurrence) && targetEvent.recurrence !== 'none';
+
+      // Single events / tasks, and recurring series with only one occurrence,
+      // delete immediately with no modal.
+      if (
+        !isRecurring ||
+        countEventOccurrencesUpTo(targetEvent, 2) <= 1
+      ) {
+        setPendingRemoveEventId(eventId);
+        return;
+      }
+
+      // Recurring series with more than one occurrence: ask for scope.
+      const date =
+        occurrenceDate ?? targetEvent.start.split('T')[0];
+      setPendingDeleteScope({ eventId, date });
+    },
+    []
+  );
 
   const handleCancelRemoveEvent = useCallback(() => {
     setPendingRemoveEventId(null);
@@ -987,8 +1025,125 @@ export const App: React.FC = () => {
           await syncSoftDeleteEvent(uid, targetEvent);
         }
       })();
+    } else {
+      void deleteStoredEvent(eventId);
     }
   }, [pendingRemoveEventId]);
+
+  const softDeleteSeries = useCallback(
+    async (ev: CalendarEvent) => {
+      setEvents((prev) => prev.filter((e) => e.id !== ev.id));
+      const uid = userIdRef.current;
+      if (uid) {
+        void (async () => {
+          await deleteStoredEvent(ev.id);
+          await syncSoftDeleteEvent(uid, ev);
+        })();
+      } else {
+        await deleteStoredEvent(ev.id);
+      }
+    },
+    []
+  );
+
+  const handleConfirmDeleteScope = useCallback(
+    async (scope: DeleteScope) => {
+      const current = pendingDeleteScope;
+      if (!current) return;
+      const { eventId, date: D } = current;
+      const targetEvent = eventsRef.current.find((e) => e.id === eventId);
+      if (!targetEvent) {
+        setPendingDeleteScope(null);
+        return;
+      }
+
+      const uid = userIdRef.current;
+      const nowIso = new Date().toISOString();
+
+      setPendingDeleteScope(null);
+      setSelectedOccurrence(null);
+      setFormModalOpen(false);
+
+      if (scope === 'all') {
+        await softDeleteSeries(targetEvent);
+        return;
+      }
+
+      if (scope === 'this') {
+        const existing = sanitizeExceptionDates(targetEvent.exceptionDates);
+        const next = existing.includes(D)
+          ? existing
+          : [...existing, D];
+        const remaining = countEventOccurrencesUpTo(
+          { ...targetEvent, exceptionDates: next },
+          2
+        );
+        if (remaining <= 0) {
+          await softDeleteSeries(targetEvent);
+          return;
+        }
+        const updated: CalendarEvent = {
+          ...targetEvent,
+          exceptionDates: next,
+          updatedAt: nowIso,
+        };
+        setEvents((prev) =>
+          prev.map((e) => (e.id === eventId ? updated : e))
+        );
+        if (uid) {
+          void persistAndSyncEvent(updated, true);
+        } else {
+          await putStoredEvent(updated);
+        }
+        return;
+      }
+
+      // scope === 'thisAndFollowing'
+      const baseStart = parseLocalDateTime(targetEvent.start);
+      const firstOcc = expandEventsInRange(
+        [targetEvent],
+        startOfDay(baseStart),
+        addYears(baseStart, 1)
+      )[0];
+      const firstDate = firstOcc
+        ? formatDateInput(firstOcc.start)
+        : null;
+      if (firstDate && D <= firstDate) {
+        // D is the first occurrence: nothing to keep before it.
+        await softDeleteSeries(targetEvent);
+        return;
+      }
+
+      const dayBefore = formatDateInput(
+        subDays(parseLocalDateTime(`${D}T00:00`), 1)
+      );
+      const nextUntil = dayBefore;
+      const nextExceptions = sanitizeExceptionDates(
+        targetEvent.exceptionDates
+      ).filter((d) => d < D);
+      const updated: CalendarEvent = {
+        ...targetEvent,
+        recurrenceUntil: nextUntil,
+        exceptionDates:
+          nextExceptions.length > 0 ? nextExceptions : undefined,
+        updatedAt: nowIso,
+      };
+      setEvents((prev) =>
+        prev.map((e) => (e.id === eventId ? updated : e))
+      );
+      if (uid) {
+        void persistAndSyncEvent(updated, true);
+      } else {
+        await putStoredEvent(updated);
+      }
+    },
+    [
+      pendingDeleteScope,
+      softDeleteSeries,
+      persistAndSyncEvent,
+      putStoredEvent,
+    ]
+  );
 
   const handleToggleTaskComplete = useCallback(
     (eventId: string, e?: React.MouseEvent) => {
@@ -1415,6 +1570,18 @@ export const App: React.FC = () => {
         onCancel={handleCancelRemoveEvent}
         onConfirm={handleConfirmRemoveEvent}
       />
+
+      {/* Delete a recurring series by scope (this / this-and-following / all) */}
+      {Boolean(pendingDeleteScope) && (
+        <DeleteRecurrenceModal
+          target={
+            events.find((e) => e.id === pendingDeleteScope!.eventId) ?? null
+          }
+          occurrenceDate={pendingDeleteScope!.date}
+          onCancel={() => setPendingDeleteScope(null)}
+          onConfirm={handleConfirmDeleteScope}
+        />
+      )}
 
       {/* Dynamic Weekly & Monthly Theme Engine Studio */}
       <ThemeStudioModal

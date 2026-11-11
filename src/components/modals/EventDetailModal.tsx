@@ -31,7 +31,7 @@ interface EventDetailModalProps {
   categoryMap: Record<string, CategoryMeta>;
   onClose: () => void;
   onEdit: (occ: EventOccurrence) => void;
-  onDelete: (eventId: string) => void;
+  onDelete: (eventId: string, occurrenceDate?: string) => void;
   onDuplicate: (occ: EventOccurrence) => void;
   onToggleTaskComplete: (eventId: string) => void;
 }
@@ -295,7 +295,9 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           <div className="px-5 py-3.5 border-t border-theme-border bg-theme-elevated flex items-center justify-between gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => onDelete(event.id)}
+              onClick={() =>
+                onDelete(event.id, format(activeOccurrence.start, 'yyyy-MM-dd'))
+              }
               className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />

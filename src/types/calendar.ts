@@ -70,6 +70,9 @@ export type CategoryScope = 'event' | 'task';
 /** Quick filter presets for which item types the calendar draws. */
 export type CalendarScopeFilter = 'both' | 'events' | 'tasks';
 
+/** Scope of a recurring-series deletion. */
+export type DeleteScope = 'this' | 'thisAndFollowing' | 'all';
+
 export interface CategoryTag {
   id: EventCategory;
   label: string;
@@ -102,6 +105,8 @@ export interface CalendarEvent {
   imageName?: string;
   isTask?: boolean;
   completed?: boolean;
+  /** Exception dates ("YYYY-MM-DD") excluded from a recurring series. */
+  exceptionDates?: string[];
   createdAt: string;
   updatedAt: string;
 }

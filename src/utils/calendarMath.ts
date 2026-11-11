@@ -14,6 +14,8 @@ import {
   format,
   isAfter,
   isBefore,
+  isValid,
+  parse,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -116,6 +118,33 @@ export function sanitizeDaySchedule(
     if (endMins <= startMins) continue;
     seen.add(weekday);
     out.push({ weekday, startMins, endMins });
+  }
+  return out;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Validate and normalize an `exceptionDates` array coming from local storage
+ * or Supabase. Anything that isn't a string array of valid "YYYY-MM-DD" dates
+ * is silently dropped; missing or null input yields an empty array. Never
+ * throws.
+ */
+export function sanitizeExceptionDates(
+  exceptionDates: unknown
+): string[] {
+  if (!Array.isArray(exceptionDates)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of exceptionDates) {
+    if (typeof raw !== 'string' || !ISO_DATE.test(raw)) continue;
+    const parsed = parse(raw, 'yyyy-MM-dd', new Date());
+    if (!isValid(parsed)) continue;
+    const iso = formatDateInput(parsed);
+    if (!seen.has(iso)) {
+      seen.add(iso);
+      out.push(iso);
+    }
   }
   return out;
 }
@@ -233,7 +262,13 @@ export function expandEventsInRange(
       : rawEnd;
     const durationMs = Math.max(0, baseEnd.getTime() - baseStart.getTime());
 
+    // Dates excluded from this recurring series (also applied to non-recurring
+    // events defensively, where it is always empty).
+    const exceptionDates = new Set(sanitizeExceptionDates(event.exceptionDates));
+    const isExceptioned = (d: Date) => exceptionDates.has(formatDateInput(d));
+
     if (!event.recurrence || event.recurrence === 'none') {
+      if (isExceptioned(baseStart)) continue;
       const effectiveEnd = event.allDay ? endOfDay(baseEnd) : baseEnd;
       if (!isAfter(baseStart, winEnd) && !isBefore(effectiveEnd, winStart)) {
         occurrences.push({
@@ -389,6 +424,7 @@ export function expandEventsInRange(
 
           const instEnd = event.allDay ? endOfDay(rawInstEnd) : rawInstEnd;
 
+          if (isExceptioned(instStart)) continue;
           if (!isBefore(instEnd, winStart)) {
             occurrences.push({
               occurrenceId: `${event.id}::${formatLocalDateTime(instStart)}`,
@@ -442,6 +478,7 @@ export function expandEventsInRange(
       const rawInstEnd = new Date(instStart.getTime() + durationMs);
       const instEnd = event.allDay ? endOfDay(rawInstEnd) : rawInstEnd;
 
+      if (isExceptioned(instStart)) continue;
       if (!isBefore(instEnd, winStart)) {
         occurrences.push({
           occurrenceId: `${event.id}::${formatLocalDateTime(instStart)}`,
@@ -463,6 +500,112 @@ export function expandEventsInRange(
     if (diff !== 0) return diff;
     return a.event.title.localeCompare(b.event.title);
   });
+}
+
+/**
+ * Count how many occurrences a recurring event has, capped at `limit`.
+ * Applies `recurrenceUntil`, `maxOccurrences` ('after'), and `exceptionDates`,
+ * and is not bound to a visible date window. Stops as soon as `limit`
+ * occurrences are found. Returns 0 for non-recurring events.
+ */
+export function countEventOccurrencesUpTo(
+  event: CalendarEvent,
+  limit: number
+): number {
+  if (!event.recurrence || event.recurrence === 'none') return 0;
+  if (limit <= 0) return 0;
+
+  const baseStart = parseLocalDateTime(event.start);
+  const baseStartDay = startOfDay(baseStart);
+  const exceptionDates = new Set(
+    sanitizeExceptionDates(event.exceptionDates)
+  );
+  const isExceptioned = (d: Date) => exceptionDates.has(formatDateInput(d));
+
+  // Normalize the rule (mirrors expandEventsInRange).
+  let unit: 'day' | 'week' | 'month' | 'year' = 'day';
+  let interval = 1;
+  let daysOfWeek: number[] = [baseStart.getDay()];
+  let endType: 'never' | 'on' | 'after' = event.recurrenceUntil
+    ? 'on'
+    : 'never';
+  let endDateStr: string | undefined = event.recurrenceUntil;
+  let maxOccurrences = Infinity;
+
+  if (event.recurrence === 'custom') {
+    const cfg =
+      event.customRecurrence ?? makeDefaultCustomRecurrence(baseStart);
+    unit = cfg.unit;
+    interval = Math.max(1, Math.floor(cfg.interval || 1));
+    daysOfWeek =
+      cfg.daysOfWeek && cfg.daysOfWeek.length > 0
+        ? [...new Set(cfg.daysOfWeek)]
+            .filter((d) => d >= 0 && d <= 6)
+            .sort((a, b) => a - b)
+        : [baseStart.getDay()];
+    endType = cfg.endType;
+    endDateStr = cfg.endDate;
+    if (cfg.endType === 'after') {
+      maxOccurrences = Math.max(1, Math.min(2000, Math.floor(cfg.occurrences || 1)));
+    }
+  } else if (event.recurrence === 'weekly') {
+    unit = 'week';
+  } else if (event.recurrence === 'monthly') {
+    unit = 'month';
+  } else if (event.recurrence === 'yearly') {
+    unit = 'year';
+  } else {
+    unit = 'day';
+  }
+
+  const untilBoundary =
+    endType === 'on' && endDateStr
+      ? endOfDay(parseLocalDateTime(`${endDateStr}T23:59`))
+      : null;
+
+  let count = 0;
+
+  if (unit === 'week') {
+    const anchorSunday = startOfWeek(baseStart, { weekStartsOn: 0 });
+    // Cap cycles to avoid looping forever on open-ended ('never') series.
+    const maxCycles =
+      endType === 'after' ? maxOccurrences + 2 : Math.min(2000, limit * 50 + 10);
+    for (let c = 0; c < maxCycles; c += 1) {
+      const weekSunday = addWeeks(anchorSunday, c * interval);
+      if (untilBoundary && isAfter(startOfDay(weekSunday), untilBoundary)) {
+        break;
+      }
+      for (const dow of daysOfWeek) {
+        const dayCandidate = addDays(weekSunday, dow);
+        if (isBefore(startOfDay(dayCandidate), baseStartDay)) continue;
+        if (isExceptioned(dayCandidate)) continue;
+        count += 1;
+        if (count >= limit) return count;
+        if (endType === 'after' && count >= maxOccurrences) return count;
+      }
+    }
+    return count;
+  }
+
+  // Day / Month / Year interval expansion, counting from the series start.
+  const maxIterations =
+    endType === 'after' ? maxOccurrences : Math.min(2000, limit * 50 + 10);
+  for (let i = 0; i < maxIterations; i += 1) {
+    let instStart: Date;
+    if (unit === 'day') {
+      instStart = addDays(baseStart, i * interval);
+    } else if (unit === 'month') {
+      instStart = addMonths(baseStart, i * interval);
+    } else {
+      instStart = addYears(baseStart, i * interval);
+    }
+    if (untilBoundary && isAfter(instStart, untilBoundary)) break;
+    if (endType === 'after' && i >= maxOccurrences) break;
+    if (isExceptioned(instStart)) continue;
+    count += 1;
+    if (count >= limit) return count;
+  }
+  return count;
 }
 
 export function getOccurrencesForDay(

@@ -77,7 +77,7 @@ interface EventFormModalProps {
   onDeleteCustomCategory: (id: string) => void;
   onClose: () => void;
   onSave: (draft: EventDraft) => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string, occurrenceDate?: string) => void;
 }
 
 type ActiveSchedulePicker = 'date' | 'startTime' | 'endTime' | 'repeat' | null;
@@ -2103,7 +2103,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               {isEditing && view.id && onDelete ? (
                 <button
                   type="button"
-                  onClick={() => onDelete(view.id!)}
+                  onClick={() => onDelete(view.id!, view.start.split('T')[0])}
                   className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
