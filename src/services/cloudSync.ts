@@ -9,6 +9,7 @@ import {
   ThemePreferences,
 } from '../types/calendar';
 import { DEFAULT_CATEGORY_TAGS } from '../constants/categories';
+import { sanitizeExceptionDates } from '../utils/calendarMath';
 import {
   applyStoredEventsPatch,
   loadCustomCategories,
@@ -55,6 +56,7 @@ interface EventRow {
   recurrence: string;
   recurrence_until: string | null;
   custom_recurrence: CustomRecurrenceConfig | null;
+  exception_dates: string[] | null;
   image_url: string | null;
   image_path?: string | null;
   image_name?: string | null;
@@ -81,6 +83,7 @@ export interface EventUpsertPayload {
   recurrence: RecurrenceRule;
   recurrence_until: string | null;
   custom_recurrence: CustomRecurrenceConfig | null;
+  exception_dates: string[] | null;
   image_url: string | null;
   image_path: string | null;
   image_name: string | null;
@@ -372,6 +375,7 @@ export function buildEventUpsertPayload(
     recurrence: event.recurrence,
     recurrence_until: event.recurrenceUntil ?? null,
     custom_recurrence: event.customRecurrence ?? null,
+    exception_dates: event.exceptionDates ?? null,
     image_url:
       isDeleted || hasStoragePath
         ? null
@@ -442,6 +446,11 @@ export function mapRowToCalendarEvent(
     recurrence,
     recurrenceUntil: row.recurrence_until ?? undefined,
     customRecurrence: row.custom_recurrence ?? undefined,
+    exceptionDates:
+      (() => {
+        const cleaned = sanitizeExceptionDates(row.exception_dates);
+        return cleaned.length > 0 ? cleaned : undefined;
+      })(),
     imageUrl,
     imagePath,
     imageName,
