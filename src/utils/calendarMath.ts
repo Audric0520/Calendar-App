@@ -65,6 +65,61 @@ export function makeDefaultCustomRecurrence(
   };
 }
 
+/**
+ * Parse a local "HH:mm" string into total minutes since midnight.
+ * Returns null for anything malformed (wrong format, out-of-range hours/min).
+ */
+export function parseHhmmMinutes(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+export interface SanitizedDaySchedule {
+  weekday: number; // 0 = Sunday .. 6 = Saturday
+  startMins: number;
+  endMins: number;
+}
+
+/**
+ * Validate and normalize a `daySchedule` array coming from local storage or
+ * Supabase. Malformed entries are silently dropped; duplicate weekdays keep
+ * the first valid entry. Returns an empty array when nothing is usable, so
+ * callers fall back to the event's own start/end times.
+ */
+export function sanitizeDaySchedule(
+  daySchedule: unknown
+): SanitizedDaySchedule[] {
+  if (!Array.isArray(daySchedule)) return [];
+  const seen = new Set<number>();
+  const out: SanitizedDaySchedule[] = [];
+  for (const entry of daySchedule) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    const weekday = e.weekday;
+    if (
+      typeof weekday !== 'number' ||
+      !Number.isInteger(weekday) ||
+      weekday < 0 ||
+      weekday > 6
+    )
+      continue;
+    if (seen.has(weekday)) continue;
+    const startMins = parseHhmmMinutes(e.start);
+    const endMins = parseHhmmMinutes(e.end);
+    if (startMins === null || endMins === null) continue;
+    // End must be after start on the same day (no overnight events).
+    if (endMins <= startMins) continue;
+    seen.add(weekday);
+    out.push({ weekday, startMins, endMins });
+  }
+  return out;
+}
+
 export function formatRecurrenceSummary(params: {
   recurrence: RecurrenceRule;
   recurrenceUntil?: string;
@@ -255,6 +310,17 @@ export function expandEventsInRange(
       const maxWeekCycles = endType === 'after' ? maxOccurrences + 2 : 600;
       let stop = false;
 
+      // Per-weekday start/end overrides (unit === 'week' only).
+      // Weekdays without an entry keep the event's own start/end times.
+      const dayScheduleByWeekday = new Map<number, SanitizedDaySchedule>();
+      if (event.customRecurrence?.daySchedule) {
+        for (const entry of sanitizeDaySchedule(
+          event.customRecurrence.daySchedule
+        )) {
+          dayScheduleByWeekday.set(entry.weekday, entry);
+        }
+      }
+
       for (let c = 0; c < maxWeekCycles && !stop; c++) {
         const cycleIdx = startCycle + c;
         const weekSunday = addWeeks(anchorSunday, cycleIdx * interval);
@@ -265,15 +331,39 @@ export function expandEventsInRange(
 
         for (const dow of daysOfWeek) {
           const dayCandidate = addDays(weekSunday, dow);
-          const instStart = new Date(
-            dayCandidate.getFullYear(),
-            dayCandidate.getMonth(),
-            dayCandidate.getDate(),
-            baseStart.getHours(),
-            baseStart.getMinutes(),
-            baseStart.getSeconds(),
-            0
-          );
+          const schedule = dayScheduleByWeekday.get(dow);
+
+          let instStart: Date;
+          let rawInstEnd: Date;
+          if (schedule) {
+            instStart = new Date(
+              dayCandidate.getFullYear(),
+              dayCandidate.getMonth(),
+              dayCandidate.getDate(),
+              Math.floor(schedule.startMins / 60),
+              schedule.startMins % 60,
+              0
+            );
+            rawInstEnd = new Date(
+              dayCandidate.getFullYear(),
+              dayCandidate.getMonth(),
+              dayCandidate.getDate(),
+              Math.floor(schedule.endMins / 60),
+              schedule.endMins % 60,
+              0
+            );
+          } else {
+            instStart = new Date(
+              dayCandidate.getFullYear(),
+              dayCandidate.getMonth(),
+              dayCandidate.getDate(),
+              baseStart.getHours(),
+              baseStart.getMinutes(),
+              baseStart.getSeconds(),
+              0
+            );
+            rawInstEnd = new Date(instStart.getTime() + durationMs);
+          }
 
           // Never generate occurrences prior to the series start date
           if (isBefore(startOfDay(instStart), baseStartDay)) {
@@ -297,7 +387,6 @@ export function expandEventsInRange(
             break;
           }
 
-          const rawInstEnd = new Date(instStart.getTime() + durationMs);
           const instEnd = event.allDay ? endOfDay(rawInstEnd) : rawInstEnd;
 
           if (!isBefore(instEnd, winStart)) {
