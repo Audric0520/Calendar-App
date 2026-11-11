@@ -10,6 +10,10 @@ import {
   makeDefaultCustomRecurrence,
 } from './calendarMath';
 import {
+  buildEventUpsertPayload,
+  mapRowToCalendarEvent,
+} from '../services/cloudSync';
+import {
   CalendarEvent,
   CustomRecurrenceConfig,
 } from '../types/calendar';
@@ -355,5 +359,203 @@ describe('delete scope logic', () => {
       { weekday: 1, start: '07:30', end: '10:00' },
       { weekday: 6, start: '08:00', end: '09:00' },
     ]);
+  });
+});
+
+describe('Supabase sync row mapping for delete scope', () => {
+  const baseEvent: CalendarEvent = {
+    id: 'evt-1',
+    title: 'Weekly series',
+    start: '2026-11-02T09:00',
+    end: '2026-11-02T10:00',
+    allDay: false,
+    category: 'class-sched',
+    location: '',
+    description: '',
+    recurrence: 'custom',
+    isTask: false,
+    completed: false,
+    createdAt: '2026-11-02T09:00:00',
+    updatedAt: '2026-11-02T09:00:00',
+    customRecurrence: {
+      interval: 1,
+      unit: 'week',
+      daysOfWeek: [1, 6],
+      endType: 'never',
+    },
+  };
+
+  it('(a) "This event" produces an upsert payload containing exception_dates as an array', () => {
+    const event = {
+      ...baseEvent,
+      exceptionDates: ['2026-11-09'],
+    };
+    const payload = buildEventUpsertPayload(event, {
+      includeCreatedAt: true,
+      deletedAt: null,
+    });
+    expect(payload.exception_dates).toEqual(['2026-11-09']);
+    expect(Array.isArray(payload.exception_dates)).toBe(true);
+  });
+
+  it('(b) "This and following" produces a payload with the new recurrence_until', () => {
+    const event = {
+      ...baseEvent,
+      recurrenceUntil: '2026-11-15',
+      exceptionDates: undefined,
+    };
+    const payload = buildEventUpsertPayload(event, {
+      includeCreatedAt: true,
+      deletedAt: null,
+    });
+    expect(payload.recurrence_until).toBe('2026-11-15');
+    expect(payload.exception_dates).toBeNull();
+  });
+
+  it('(c) row-mapping round trip keeps exceptionDates and recurrenceUntil', () => {
+    // App event -> Supabase row (payload) -> app event (mapRowToCalendarEvent)
+    const event = {
+      ...baseEvent,
+      recurrenceUntil: '2026-11-15',
+      exceptionDates: ['2026-11-09', '2026-11-16'],
+    };
+    const payload = buildEventUpsertPayload(event, {
+      includeCreatedAt: true,
+      deletedAt: null,
+    });
+
+    const row: Parameters<typeof mapRowToCalendarEvent>[0] = {
+      id: payload.id,
+      title: payload.title,
+      start_local: payload.start_local,
+      end_local: payload.end_local,
+      all_day: payload.all_day,
+      category: payload.category,
+      location: payload.location,
+      description: payload.description,
+      recurrence: payload.recurrence,
+      recurrence_until: payload.recurrence_until,
+      custom_recurrence: payload.custom_recurrence,
+      exception_dates: payload.exception_dates,
+      image_url: payload.image_url,
+      image_path: payload.image_path,
+      image_name: payload.image_name,
+      is_task: payload.is_task,
+      completed: payload.completed,
+      created_at: payload.created_at,
+      deleted_at: payload.deleted_at,
+    };
+
+    const mapped = mapRowToCalendarEvent(row);
+    expect(mapped.recurrenceUntil).toBe('2026-11-15');
+    expect(mapped.exceptionDates).toEqual(['2026-11-09', '2026-11-16']);
+  });
+
+  it('(c) maps null exception_dates back to undefined (no exceptions)', () => {
+    const row: Parameters<typeof mapRowToCalendarEvent>[0] = {
+      id: 'evt-1',
+      title: 'Series',
+      start_local: '2026-11-02T09:00',
+      end_local: '2026-11-02T10:00',
+      all_day: false,
+      category: 'class-sched',
+      location: '',
+      description: '',
+      recurrence: 'custom',
+      recurrence_until: null,
+      custom_recurrence: null,
+      exception_dates: null,
+      image_url: null,
+      image_path: null,
+      image_name: null,
+      is_task: false,
+      completed: false,
+      created_at: '2026-11-02T09:00:00',
+      updated_at: '2026-11-02T09:00:00',
+      deleted_at: null,
+    };
+
+    const mapped = mapRowToCalendarEvent(row);
+    expect(mapped.exceptionDates).toBeUndefined();
+  });
+
+  it('(d) expansion skips exception dates after a round trip', () => {
+    const event = {
+      ...baseEvent,
+      exceptionDates: ['2026-11-09'], // a Monday
+    };
+    const payload = buildEventUpsertPayload(event, {
+      includeCreatedAt: true,
+      deletedAt: null,
+    });
+
+    const row: Parameters<typeof mapRowToCalendarEvent>[0] = {
+      id: payload.id,
+      title: payload.title,
+      start_local: payload.start_local,
+      end_local: payload.end_local,
+      all_day: payload.all_day,
+      category: payload.category,
+      location: payload.location,
+      description: payload.description,
+      recurrence: payload.recurrence,
+      recurrence_until: payload.recurrence_until,
+      custom_recurrence: payload.custom_recurrence,
+      exception_dates: payload.exception_dates,
+      image_url: payload.image_url,
+      image_path: payload.image_path,
+      image_name: payload.image_name,
+      is_task: payload.is_task,
+      completed: payload.completed,
+      created_at: payload.created_at,
+      deleted_at: payload.deleted_at,
+    };
+
+    const mapped = mapRowToCalendarEvent(row);
+    const rangeStart = parseLocalDateTime('2026-11-02T00:00');
+    const rangeEnd = parseLocalDateTime('2026-11-30T23:59');
+    const occs = expandEventsInRange([mapped], rangeStart, rangeEnd);
+
+    // Nov 2, 7, 9(skip), 14, 16, 21, 23, 28, 30 -> 8 occurrences
+    expect(occs).toHaveLength(8);
+    for (const o of occs) {
+      expect(formatLocalDateTime(o.start)).not.toBe('2026-11-09T09:00');
+    }
+  });
+
+  it('(d) malformed exception_dates from a row is ignored safely', () => {
+    const row: Parameters<typeof mapRowToCalendarEvent>[0] = {
+      id: 'evt-1',
+      title: 'Series',
+      start_local: '2026-11-02T09:00',
+      end_local: '2026-11-02T10:00',
+      all_day: false,
+      category: 'class-sched',
+      location: '',
+      description: '',
+      recurrence: 'custom',
+      recurrence_until: null,
+      custom_recurrence: null,
+      exception_dates: [
+        '2026-11-09',
+        null,
+        'not-a-date',
+        123,
+        '2026-13-99',
+      ] as unknown as string[] | null,
+      image_url: null,
+      image_path: null,
+      image_name: null,
+      is_task: false,
+      completed: false,
+      created_at: '2026-11-02T09:00:00',
+      updated_at: '2026-11-02T09:00:00',
+      deleted_at: null,
+    };
+
+    // Must not throw
+    expect(() => mapRowToCalendarEvent(row)).not.toThrow();
+    const mapped = mapRowToCalendarEvent(row);
+    expect(mapped.exceptionDates).toEqual(['2026-11-09']);
   });
 });
