@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  countEventOccurrencesUpTo,
   expandEventsInRange,
   parseHhmmMinutes,
   sanitizeDaySchedule,
+  sanitizeExceptionDates,
   parseLocalDateTime,
   formatLocalDateTime,
   makeDefaultCustomRecurrence,
@@ -229,5 +231,129 @@ describe('customRecurrence JSON round-trip with daySchedule', () => {
       start: '07:30',
       end: '10:00',
     });
+  });
+});
+
+describe('exceptionDates validation', () => {
+  it('treats missing / null as empty and ignores malformed entries', () => {
+    expect(sanitizeExceptionDates(null)).toEqual([]);
+    expect(sanitizeExceptionDates(undefined)).toEqual([]);
+    expect(sanitizeExceptionDates([])).toEqual([]);
+    expect(
+      sanitizeExceptionDates([
+        null,
+        'not-a-date',
+        '2026-13-99',
+        123,
+        { foo: 'bar' },
+        '2026-11-09',
+        '2026-11-09', // duplicate
+        '2026-02-30', // invalid calendar date
+      ])
+    ).toEqual(['2026-11-09']);
+  });
+
+  it('normalizes valid dates to YYYY-MM-DD', () => {
+    expect(sanitizeExceptionDates(['2026-11-09'])).toEqual(['2026-11-09']);
+  });
+});
+
+describe('delete scope logic', () => {
+  it('single event and single-occurrence series delete directly (no modal)', () => {
+    // Non-recurring event -> count is 0 -> immediate delete.
+    expect(countEventOccurrencesUpTo(makeEvent({ recurrence: 'none' }), 2)).toBe(
+      0
+    );
+
+    // Recurring series limited to exactly one occurrence -> count is 1.
+    const oneOff = makeEvent({
+      customRecurrence: {
+        ...makeDefaultCustomRecurrence(baseStart),
+        daysOfWeek: [1],
+        endType: 'after',
+        occurrences: 1,
+      },
+    });
+    expect(countEventOccurrencesUpTo(oneOff, 2)).toBe(1);
+  });
+
+  it('expansion skips dates in exceptionDates', () => {
+    const event = makeEvent({
+      customRecurrence: {
+        ...makeDefaultCustomRecurrence(baseStart),
+        daysOfWeek: [1, 6],
+      },
+      exceptionDates: ['2026-11-09'], // a Monday (top-level field)
+    });
+
+    const occs = expandEventsInRange([event], rangeStart, rangeEnd);
+    // Nov 2, 7, 9(skip), 14, 16, 21, 23, 28, 30 -> 8 occurrences
+    expect(occs).toHaveLength(8);
+    for (const o of occs) {
+      expect(formatLocalDateTime(o.start)).not.toBe('2026-11-09T09:00');
+    }
+  });
+
+  it('recurrenceUntil truncates expansion at the day before', () => {
+    const event = makeEvent({
+      recurrenceUntil: '2026-11-15',
+      customRecurrence: {
+        ...makeDefaultCustomRecurrence(baseStart),
+        daysOfWeek: [1, 6],
+        endType: 'on',
+        endDate: '2026-11-15',
+      },
+    });
+
+    const occs = expandEventsInRange([event], rangeStart, rangeEnd);
+    const dates = occs.map((o) => formatLocalDateTime(o.start).slice(0, 10));
+    expect(dates).toEqual(['2026-11-02', '2026-11-07', '2026-11-09', '2026-11-14']);
+  });
+
+  it('daySchedule: "This event" skips only that date, other weekday per-day times unchanged', () => {
+    const event = makeEvent({
+      customRecurrence: {
+        ...makeDefaultCustomRecurrence(baseStart),
+        daysOfWeek: [1, 6],
+        daySchedule: [
+          { weekday: 1, start: '07:30', end: '10:00' },
+          { weekday: 6, start: '08:00', end: '09:00' },
+        ],
+      },
+      exceptionDates: ['2026-11-09'], // skip the Monday Nov 9 (top-level field)
+    });
+
+    const occs = expandEventsInRange([event], rangeStart, rangeEnd);
+    // Nov 2 Mon 07:30, Nov 7 Sat 08:00, Nov 9 Mon SKIPPED,
+    // Nov 14 Sat 08:00, Nov 16 Mon 07:30, Nov 21 Sat 08:00, ...
+    const mondays = occs.filter((o) => o.start.getDay() === 1);
+    const saturdays = occs.filter((o) => o.start.getDay() === 6);
+    expect(mondays).toHaveLength(4); // Nov 2, 16, 23, 30 (Nov 9 skipped)
+    expect(saturdays).toHaveLength(4); // Nov 7, 14, 21, 28
+    for (const o of mondays) {
+      expect(`${o.start.getHours().toString().padStart(2, '0')}:${o.start
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`).toBe('07:30');
+      expect(`${o.end.getHours().toString().padStart(2, '0')}:${o.end
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`).toBe('10:00');
+    }
+    for (const o of saturdays) {
+      expect(`${o.start.getHours().toString().padStart(2, '0')}:${o.start
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`).toBe('08:00');
+      expect(`${o.end.getHours().toString().padStart(2, '0')}:${o.end
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`).toBe('09:00');
+    }
+    // daySchedule itself is untouched on the series
+    expect(event.customRecurrence?.daySchedule).toEqual([
+      { weekday: 1, start: '07:30', end: '10:00' },
+      { weekday: 6, start: '08:00', end: '09:00' },
+    ]);
   });
 });
