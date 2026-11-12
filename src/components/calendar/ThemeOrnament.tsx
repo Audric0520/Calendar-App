@@ -1,4 +1,5 @@
 import React from 'react';
+import oooLogoUrl from '../../assets/OOO_LOGO.png?url';
 import wednesdayLogoUrl from '../../assets/wednesday-logo.png?url';
 import { ThemeId } from '../../types/calendar';
 
@@ -57,23 +58,24 @@ export const ThemeOrnament: React.FC<ThemeOrnamentProps> = ({
       );
 
     case 'ooo':
-      // Kamen Rider OOO Tatoba Core Medals (Taka Red, Tora Yellow, Batta Green) with Gold O-Scanner Rims
       return (
-        <svg
-          width={Math.round(size * 1.45)}
+        <img
+          src={oooLogoUrl}
+          width={size}
           height={size}
-          viewBox="0 0 34 22"
-          fill="none"
-          className={className}
+          alt=""
           aria-hidden="true"
-        >
-          <circle cx="7" cy="11" r="5.8" fill="#ef4444" stroke="#facc15" strokeWidth="1.8" />
-          <circle cx="7" cy="11" r="2.6" fill="#991b1b" />
-          <circle cx="17" cy="11" r="5.8" fill="#eab308" stroke="#fef08a" strokeWidth="1.8" />
-          <circle cx="17" cy="11" r="2.6" fill="#713f12" />
-          <circle cx="27" cy="11" r="5.8" fill="#22c55e" stroke="#facc15" strokeWidth="1.8" />
-          <circle cx="27" cy="11" r="2.6" fill="#14532d" />
-        </svg>
+          draggable={false}
+          className={className}
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            display: 'block',
+            objectFit: 'contain',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}
+        />
       );
 
     case 'wednesday':
