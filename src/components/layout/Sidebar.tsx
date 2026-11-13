@@ -12,6 +12,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  LogIn,
+  LogOut,
   Palette,
   Pipette,
   Plus,
@@ -42,6 +44,7 @@ import {
   drawerBackdropVariants,
   drawerPanelVariants,
 } from '../../motion/presets';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -351,6 +354,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [tagColor, setTagColor] = useState('#f43f5e');
   const [tagErr, setTagErr] = useState<string | null>(null);
 
+  const {
+    user,
+    loading: authLoading,
+    authError,
+    clearAuthError,
+    signInWithGoogle,
+    signOut,
+  } = useAuth();
+  const [authBusy, setAuthBusy] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  const avatarUrl = useMemo(() => {
+    if (!user) return null;
+    const meta = user.user_metadata;
+    const raw = meta?.avatar_url ?? meta?.picture;
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
+  }, [user]);
+
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [avatarUrl]);
+
+  const userEmail =
+    user?.email ||
+    (typeof user?.user_metadata?.email === 'string'
+      ? user.user_metadata.email
+      : '') ||
+    'Account';
+  const userInitial = (userEmail.trim()[0] || 'U').toUpperCase();
+
+  const handleSignIn = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      await signInWithGoogle();
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      await signOut();
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
   const scopeFilter: CalendarScopeFilter =
     visibleScopes.length === 2
       ? 'both'
@@ -417,7 +470,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto themed-scroll px-4 pb-5 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto themed-scroll px-4 pb-5 space-y-5">
         {/* Collapsible Mini-Month Date Picker */}
         <section className="gothic-panel rounded-2xl border border-theme-border bg-theme-elevated/60 p-3">
           <div className="flex items-center justify-between">
@@ -697,6 +750,95 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </section>
       </div>
+
+      {/* Dedicated Sidebar Footer: Account / Authentication Controls */}
+      <footer className="mt-auto shrink-0 border-t border-theme-border px-4 py-3 flex flex-col gap-2">
+        <AnimatePresence>
+          {authError && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.16 }}
+              role="alert"
+              className="rounded-xl border border-theme-border bg-theme-elevated p-2.5 text-xs text-theme-text shadow-theme"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] leading-relaxed text-theme-text-secondary">
+                  {authError}
+                </p>
+                <button
+                  type="button"
+                  onClick={clearAuthError}
+                  className="p-0.5 rounded text-theme-text-muted hover:text-theme-text shrink-0"
+                  aria-label="Dismiss sign-in message"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {user ? (
+          <div className="gothic-panel rounded-2xl border border-theme-border bg-theme-elevated/60 p-2.5 space-y-2">
+            <div className="flex items-center gap-2.5 min-w-0 px-0.5">
+              {avatarUrl && !avatarFailed ? (
+                <img
+                  src={avatarUrl}
+                  alt={userEmail}
+                  referrerPolicy="no-referrer"
+                  onError={() => setAvatarFailed(true)}
+                  className="w-7 h-7 rounded-full object-cover shrink-0 border border-theme-border"
+                />
+              ) : (
+                <span
+                  style={{
+                    backgroundColor: 'var(--t-accent)',
+                    color: 'var(--t-accent-contrast)',
+                  }}
+                  aria-hidden="true"
+                  className="w-7 h-7 rounded-full inline-flex items-center justify-center text-xs font-extrabold uppercase shrink-0"
+                >
+                  {userInitial}
+                </span>
+              )}
+              <span
+                className="min-w-0 flex-1 truncate text-xs font-semibold text-theme-text-secondary"
+                title={userEmail}
+              >
+                {userEmail}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={authBusy}
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-theme-border bg-theme-surface hover:bg-theme-cell-hover disabled:opacity-60 px-3 py-2 text-xs font-bold text-theme-text transition-colors"
+              title={`Log out (${userEmail})`}
+              aria-label="Log out"
+            >
+              <LogOut className="w-3.5 h-3.5 text-theme-text-secondary shrink-0" />
+              <span>Log out</span>
+            </button>
+          </div>
+        ) : (
+          <motion.button
+            type="button"
+            onClick={handleSignIn}
+            disabled={authBusy || authLoading}
+            whileTap={{ scale: 0.98 }}
+            whileHover={{ y: -1 }}
+            transition={{ type: 'spring', stiffness: 520, damping: 26 }}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-theme-border bg-theme-elevated hover:bg-theme-cell-hover disabled:opacity-60 px-3 py-2.5 text-xs font-bold text-theme-text transition-colors shadow-sm"
+            title="Sign in with Google"
+          >
+            <LogIn className="w-4 h-4 text-theme-accent shrink-0" />
+            <span>Sign in</span>
+          </motion.button>
+        )}
+      </footer>
     </div>
   );
 
@@ -714,7 +856,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           initial={false}
           animate={{ x: isOpen ? 0 : -24, opacity: isOpen ? 1 : 0 }}
           transition={SPRING_SOFT}
-          className="w-72 h-full"
+          className={`w-72 h-full ${isOpen ? '' : 'pointer-events-none'}`}
         >
           {sidebarContent}
         </motion.div>
