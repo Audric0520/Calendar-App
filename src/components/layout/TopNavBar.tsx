@@ -26,6 +26,7 @@ import {
   BrowserPermissionState,
   UpcomingReminderItem,
 } from '../../hooks/useReminderEngine';
+import type { PushReminderStatus } from '../../hooks/usePushNotifications';
 import { ReminderCenterPopover } from '../notifications/ReminderCenterPopover';
 import { AnimatePresence, motion } from 'framer-motion';
 import { menuVariants } from '../../motion/presets';
@@ -59,6 +60,11 @@ interface TopNavBarProps {
   onUpdateNotificationSettings: (next: NotificationSettings) => void;
   onTriggerPreviewAlert: () => void;
   onScheduleLiveTenMinDemo: () => void;
+  isPushConfigured?: boolean;
+  pushStatus?: PushReminderStatus;
+  isPushBusy?: boolean;
+  pushError?: string | null;
+  onDisableBackgroundReminders?: () => void;
 }
 
 export const TopNavBar: React.FC<TopNavBarProps> = ({
@@ -88,6 +94,11 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   onUpdateNotificationSettings,
   onTriggerPreviewAlert,
   onScheduleLiveTenMinDemo,
+  isPushConfigured = false,
+  pushStatus = 'off',
+  isPushBusy = false,
+  pushError = null,
+  onDisableBackgroundReminders,
 }) => {
   const [bellOpen, setBellOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -432,6 +443,11 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
               onScheduleLiveTenMinDemo={() => {
                 onScheduleLiveTenMinDemo();
               }}
+              isPushConfigured={isPushConfigured}
+              pushStatus={pushStatus}
+              isPushBusy={isPushBusy}
+              pushError={pushError}
+              onDisableBackgroundReminders={onDisableBackgroundReminders}
             />
           </div>
 
