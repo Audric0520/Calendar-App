@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { addMonths, format, isSameMonth } from 'date-fns';
 import {
   Bell,
@@ -6,8 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CloudOff,
-  LogIn,
-  LogOut,
   Menu,
   Palette,
   RefreshCw,
@@ -95,55 +93,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   const [searchFocused, setSearchFocused] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  const {
-    user,
-    loading: authLoading,
-    authError,
-    clearAuthError,
-    signInWithGoogle,
-    signOut,
-  } = useAuth();
-  const [authBusy, setAuthBusy] = useState(false);
-  const [avatarFailed, setAvatarFailed] = useState(false);
-
-  const avatarUrl = useMemo(() => {
-    if (!user) return null;
-    const meta = user.user_metadata;
-    const raw = meta?.avatar_url ?? meta?.picture;
-    return typeof raw === 'string' && raw.trim().length > 0 ? raw : null;
-  }, [user]);
-
-  useEffect(() => {
-    setAvatarFailed(false);
-  }, [avatarUrl]);
-
-  const userEmail =
-    user?.email ||
-    (typeof user?.user_metadata?.email === 'string'
-      ? user.user_metadata.email
-      : '') ||
-    'Account';
-  const userInitial = (userEmail.trim()[0] || 'U').toUpperCase();
-
-  const handleSignIn = async () => {
-    if (authBusy) return;
-    setAuthBusy(true);
-    try {
-      await signInWithGoogle();
-    } finally {
-      setAuthBusy(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    if (authBusy) return;
-    setAuthBusy(true);
-    try {
-      await signOut();
-    } finally {
-      setAuthBusy(false);
-    }
-  };
+  const { user } = useAuth();
 
   const headerDateLabel = useMemo(() => {
     if (view === 'month') {
@@ -503,101 +453,6 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
               <span className="whitespace-nowrap">Not synced</span>
             </button>
           )}
-
-          {/* Account: Sign in / Avatar + Email + Sign out */}
-          <div className="relative">
-            {user ? (
-              <div className="inline-flex items-center gap-1.5 rounded-xl border border-theme-border bg-theme-elevated pl-1.5 pr-1 py-1 text-xs text-theme-text">
-                {avatarUrl && !avatarFailed ? (
-                  <img
-                    src={avatarUrl}
-                    alt={userEmail}
-                    referrerPolicy="no-referrer"
-                    onError={() => setAvatarFailed(true)}
-                    className="w-5 h-5 rounded-full object-cover shrink-0 border border-theme-border"
-                  />
-                ) : (
-                  <span
-                    style={{
-                      backgroundColor: 'var(--t-accent)',
-                      color: 'var(--t-accent-contrast)',
-                    }}
-                    aria-hidden="true"
-                    className="w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-extrabold uppercase shrink-0"
-                  >
-                    {userInitial}
-                  </span>
-                )}
-                <span
-                  className="hidden sm:inline max-w-[120px] xl:max-w-[160px] truncate font-semibold text-theme-text-secondary"
-                  title={userEmail}
-                >
-                  {userEmail}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  disabled={authBusy}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-bold text-theme-text hover:bg-theme-cell-hover disabled:opacity-60 transition-colors"
-                  title={`Sign out (${userEmail})`}
-                  aria-label="Sign out"
-                >
-                  <LogOut className="w-3.5 h-3.5 text-theme-text-secondary shrink-0" />
-                  <span className="hidden md:inline">Sign out</span>
-                </button>
-              </div>
-            ) : (
-              <motion.button
-                type="button"
-                onClick={handleSignIn}
-                disabled={authBusy || authLoading}
-                whileTap={{ scale: 0.96 }}
-                whileHover={{ y: -1 }}
-                transition={{ type: 'spring', stiffness: 520, damping: 26 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-theme-border bg-theme-elevated hover:bg-theme-cell-hover disabled:opacity-60 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-theme-text transition-colors"
-                title="Sign in with Google"
-              >
-                <LogIn className="w-3.5 h-3.5 text-theme-accent shrink-0" />
-                <span>Sign in</span>
-              </motion.button>
-            )}
-
-            <AnimatePresence>
-              {authError && (
-                <>
-                  <motion.div
-                    className="fixed inset-0 z-30"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    onClick={clearAuthError}
-                  />
-                  <motion.div
-                    variants={menuVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    style={{ transformOrigin: 'top right' }}
-                    className="absolute right-0 top-full mt-2 z-40 w-64 rounded-2xl border border-theme-border bg-theme-surface p-3 text-xs text-theme-text shadow-theme-lg gpu-layer"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-[11px] leading-relaxed text-theme-text-secondary">
-                        {authError}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={clearAuthError}
-                        className="p-0.5 rounded text-theme-text-muted hover:text-theme-text shrink-0"
-                        aria-label="Dismiss sign-in message"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
         </div>
       </div>
     </header>
