@@ -22,7 +22,11 @@ export const ReminderToastStack: React.FC<ReminderToastStackProps> = ({
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-4 right-4 z-[70] flex flex-col gap-3 w-[min(92vw,380px)] pointer-events-none"
+      style={{
+        bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+        right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+      }}
+      className="fixed z-[70] flex flex-col gap-3 w-[min(92vw,380px)] pointer-events-none"
     >
       <AnimatePresence initial={false}>
       {toasts.map((toast) => {

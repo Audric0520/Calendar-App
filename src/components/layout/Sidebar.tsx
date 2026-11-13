@@ -879,7 +879,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             />
             <motion.aside
               variants={drawerPanelVariants}
-              className="relative z-10 w-72 max-w-[86vw] h-full border-r border-theme-border shadow-2xl gpu-layer"
+              className="relative z-10 w-72 max-w-[86vw] h-full border-r border-theme-border bg-theme-surface safe-area-drawer shadow-2xl gpu-layer"
             >
               {sidebarContent}
             </motion.aside>
