@@ -16,6 +16,7 @@ import {
   BrowserPermissionState,
   UpcomingReminderItem,
 } from '../../hooks/useReminderEngine';
+import type { PushReminderStatus } from '../../hooks/usePushNotifications';
 import { isIosDevice, isStandaloneApp } from '../../utils/pwa';
 import { AnimatePresence, motion } from 'framer-motion';
 import { menuVariants } from '../../motion/presets';
@@ -30,6 +31,11 @@ interface ReminderCenterPopoverProps {
   upcomingReminders: UpcomingReminderItem[];
   onTriggerPreviewAlert: () => void;
   onScheduleLiveTenMinDemo: () => void;
+  isPushConfigured?: boolean;
+  pushStatus?: PushReminderStatus;
+  isPushBusy?: boolean;
+  pushError?: string | null;
+  onDisableBackgroundReminders?: () => void;
 }
 
 function formatCountdown(ms: number): string {
@@ -51,6 +57,24 @@ function getPermissionStateLabel(
   return 'Not enabled';
 }
 
+function getPushStatusLabel(
+  pushStatus: PushReminderStatus
+): 'Off' | 'On' | 'Needs sign-in' | 'Blocked' | 'Unsupported' {
+  switch (pushStatus) {
+    case 'on':
+      return 'On';
+    case 'needs-sign-in':
+      return 'Needs sign-in';
+    case 'blocked':
+      return 'Blocked';
+    case 'unsupported':
+      return 'Unsupported';
+    case 'off':
+    default:
+      return 'Off';
+  }
+}
+
 export const ReminderCenterPopover: React.FC<ReminderCenterPopoverProps> = ({
   isOpen,
   onClose,
@@ -61,9 +85,25 @@ export const ReminderCenterPopover: React.FC<ReminderCenterPopoverProps> = ({
   upcomingReminders,
   onTriggerPreviewAlert,
   onScheduleLiveTenMinDemo,
+  isPushConfigured = false,
+  pushStatus = 'off',
+  isPushBusy = false,
+  pushError = null,
+  onDisableBackgroundReminders,
 }) => {
   const showIosInstallHint = isIosDevice() && !isStandaloneApp();
-  const stateLabel = getPermissionStateLabel(permissionStatus);
+
+  const stateLabel = isPushConfigured
+    ? getPushStatusLabel(pushStatus)
+    : getPermissionStateLabel(permissionStatus);
+
+  const isActiveGreen = isPushConfigured
+    ? pushStatus === 'on'
+    : permissionStatus === 'granted';
+
+  const isDeniedRed = isPushConfigured
+    ? pushStatus === 'blocked'
+    : permissionStatus === 'denied';
 
   return (
     <AnimatePresence>
@@ -121,18 +161,16 @@ export const ReminderCenterPopover: React.FC<ReminderCenterPopoverProps> = ({
             </div>
 
             <div className="p-4 space-y-3.5">
-              {/* Notification Permission Status */}
+              {/* Notification & Background Push Status */}
               <div className="rounded-xl border border-theme-border bg-theme-elevated p-3 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-theme-text flex items-center gap-1.5">
-                    {permissionStatus === 'granted' ? (
+                    {isActiveGreen ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     ) : (
                       <ShieldAlert
                         className={`w-4 h-4 ${
-                          permissionStatus === 'denied'
-                            ? 'text-rose-500'
-                            : 'text-amber-500'
+                          isDeniedRed ? 'text-rose-500' : 'text-amber-500'
                         }`}
                       />
                     )}
@@ -143,36 +181,111 @@ export const ReminderCenterPopover: React.FC<ReminderCenterPopoverProps> = ({
                   </span>
                 </div>
 
-                {showIosInstallHint ? (
-                  <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
-                    On iPhone, add this app to your Home Screen first (Share,
-                    then Add to Home Screen), then open it from there to enable
-                    reminders.
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
-                    {permissionStatus === 'granted'
-                      ? 'System reminder notifications and audio chimes are active.'
-                      : permissionStatus === 'default'
-                      ? 'Click below to allow reminder notifications, or rely on automatic in-app toast alerts.'
-                      : permissionStatus === 'denied'
-                      ? 'Notifications are blocked in your browser settings — falling back automatically to animated in-app toast + audio alerts.'
-                      : 'Browser notifications are unavailable here — falling back automatically to animated in-app toast + audio alerts.'}
-                  </p>
-                )}
+                {isPushConfigured ? (
+                  <>
+                    {pushStatus === 'unsupported' && showIosInstallHint ? (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        On iPhone, add this app to your Home Screen first (Share,
+                        then Add to Home Screen), then open it from there to
+                        enable reminders.
+                      </p>
+                    ) : pushStatus === 'on' ? (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        This device gets reminders when the app is closed.
+                      </p>
+                    ) : pushStatus === 'needs-sign-in' ? (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        Sign in to get reminders when the app is closed. In-app
+                        reminders remain active while open.
+                      </p>
+                    ) : pushStatus === 'blocked' ? (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        Notifications are blocked in your browser settings —
+                        falling back automatically to animated in-app toast +
+                        audio alerts.
+                      </p>
+                    ) : pushStatus === 'unsupported' ? (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        Background push notifications are unavailable here —
+                        falling back automatically to animated in-app toast +
+                        audio alerts.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        {permissionStatus === 'granted'
+                          ? 'Background reminders are turned off on this device. In-app reminders remain active.'
+                          : 'Click below to allow reminder notifications, or rely on automatic in-app toast alerts.'}
+                      </p>
+                    )}
 
-                {permissionStatus === 'default' && (
-                  <button
-                    type="button"
-                    onClick={onRequestPermission}
-                    style={{
-                      backgroundColor: 'var(--t-accent)',
-                      color: 'var(--t-accent-contrast)',
-                    }}
-                    className="mt-2.5 w-full rounded-lg py-1.5 text-xs font-bold shadow-sm hover:opacity-95"
-                  >
-                    Enable reminders
-                  </button>
+                    {pushError && (
+                      <p className="text-[11px] text-rose-500 mt-1.5 leading-relaxed">
+                        {pushError}
+                      </p>
+                    )}
+
+                    {pushStatus === 'off' && (
+                      <button
+                        type="button"
+                        disabled={isPushBusy}
+                        onClick={onRequestPermission}
+                        style={{
+                          backgroundColor: 'var(--t-accent)',
+                          color: 'var(--t-accent-contrast)',
+                        }}
+                        className="mt-2.5 w-full rounded-lg py-1.5 text-xs font-bold shadow-sm hover:opacity-95 disabled:opacity-60"
+                      >
+                        {isPushBusy ? 'Enabling...' : 'Enable reminders'}
+                      </button>
+                    )}
+
+                    {pushStatus === 'on' && onDisableBackgroundReminders && (
+                      <button
+                        type="button"
+                        disabled={isPushBusy}
+                        onClick={onDisableBackgroundReminders}
+                        className="mt-2.5 w-full rounded-lg border border-theme-border bg-theme-surface py-1.5 text-xs font-bold text-theme-text hover:bg-theme-cell-hover disabled:opacity-60 transition-colors"
+                      >
+                        {isPushBusy
+                          ? 'Turning off...'
+                          : 'Turn off background reminders'}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {showIosInstallHint ? (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        On iPhone, add this app to your Home Screen first (Share,
+                        then Add to Home Screen), then open it from there to
+                        enable reminders.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-theme-text-secondary mt-1.5 leading-relaxed">
+                        {permissionStatus === 'granted'
+                          ? 'System reminder notifications and audio chimes are active.'
+                          : permissionStatus === 'default'
+                          ? 'Click below to allow reminder notifications, or rely on automatic in-app toast alerts.'
+                          : permissionStatus === 'denied'
+                          ? 'Notifications are blocked in your browser settings — falling back automatically to animated in-app toast + audio alerts.'
+                          : 'Browser notifications are unavailable here — falling back automatically to animated in-app toast + audio alerts.'}
+                      </p>
+                    )}
+
+                    {permissionStatus === 'default' && (
+                      <button
+                        type="button"
+                        onClick={onRequestPermission}
+                        style={{
+                          backgroundColor: 'var(--t-accent)',
+                          color: 'var(--t-accent-contrast)',
+                        }}
+                        className="mt-2.5 w-full rounded-lg py-1.5 text-xs font-bold shadow-sm hover:opacity-95"
+                      >
+                        Enable reminders
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
 

@@ -89,6 +89,7 @@ import {
   resolveTagScope,
 } from './constants/categories';
 import { useReminderEngine } from './hooks/useReminderEngine';
+import { usePushNotifications } from './hooks/usePushNotifications';
 import { TopNavBar } from './components/layout/TopNavBar';
 import { Sidebar } from './components/layout/Sidebar';
 import { MonthView } from './components/calendar/MonthView';
@@ -773,6 +774,9 @@ export const App: React.FC = () => {
     [hydratedEvents]
   );
 
+  const [hasActivePushSubscription, setHasActivePushSubscription] =
+    useState(false);
+
   const {
     permissionStatus,
     requestBrowserPermission,
@@ -786,7 +790,26 @@ export const App: React.FC = () => {
     onUpdateSettings: handleUpdateNotificationSettings,
     activeTheme: shellResolved.theme,
     onOpenEventById: handleOpenEventById,
+    hasActivePushSubscription,
   });
+
+  const {
+    isPushConfigured,
+    pushStatus,
+    hasActivePushSubscription: activePushSubscription,
+    isPushBusy,
+    pushError,
+    enableReminders,
+    disableBackgroundReminders,
+  } = usePushNotifications({
+    userId,
+    permissionStatus,
+    requestBrowserPermission,
+  });
+
+  useEffect(() => {
+    setHasActivePushSubscription(activePushSubscription);
+  }, [activePushSubscription]);
 
   const prefersReducedMotion = useReducedMotion();
   // With reduced motion requested we keep a pure cross-fade (no directional
@@ -1377,10 +1400,19 @@ export const App: React.FC = () => {
           setSelectedOccurrence(occ);
         }}
         onOpenThemeStudio={() => setThemeStudioOpen(true)}
-        onRequestNotificationPermission={requestBrowserPermission}
+        onRequestNotificationPermission={() => {
+          void enableReminders();
+        }}
         onUpdateNotificationSettings={handleUpdateNotificationSettings}
         onTriggerPreviewAlert={triggerTestReminder}
         onScheduleLiveTenMinDemo={handleScheduleLiveTenMinDemo}
+        isPushConfigured={isPushConfigured}
+        pushStatus={pushStatus}
+        isPushBusy={isPushBusy}
+        pushError={pushError}
+        onDisableBackgroundReminders={() => {
+          void disableBackgroundReminders();
+        }}
       />
 
       {/* Main Content Area: Sidebar + Calendar View */}

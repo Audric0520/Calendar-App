@@ -6,7 +6,10 @@ import {
   ReminderAlert,
   ThemeId,
 } from '../types/calendar';
-import { expandEventsInRange } from '../utils/calendarMath';
+import {
+  expandEventsInRange,
+  formatLocalDateTime,
+} from '../utils/calendarMath';
 import {
   loadFiredReminders,
   saveFiredReminders,
@@ -37,6 +40,11 @@ interface UseReminderEngineOptions {
   onUpdateSettings: (next: NotificationSettings) => void;
   activeTheme: ThemeId;
   onOpenEventById?: (eventId: string) => void;
+  hasActivePushSubscription?: boolean;
+}
+
+export function formatReminderTag(eventId: string, start: Date): string {
+  return `${eventId}|${formatLocalDateTime(start)}`;
 }
 
 function readNotificationPermission(): BrowserPermissionState {
@@ -68,6 +76,9 @@ export async function sendReminderNotification(
     if (alert.location) bodyParts.push(`Location: ${alert.location}`);
     const title = `Upcoming Event: ${alert.title}`;
     const body = bodyParts.join(' • ');
+    const notificationTag = alert.eventId
+      ? formatReminderTag(alert.eventId, alert.start)
+      : alert.id;
 
     if (
       typeof navigator !== 'undefined' &&
@@ -77,12 +88,26 @@ export async function sendReminderNotification(
       try {
         const registration = await navigator.serviceWorker.getRegistration();
         if (
+          registration?.pushManager &&
+          typeof registration.pushManager.getSubscription === 'function'
+        ) {
+          try {
+            const activePushSub =
+              await registration.pushManager.getSubscription();
+            if (activePushSub) {
+              return false;
+            }
+          } catch {
+            // Ignore getSubscription probe failure and proceed with fallback
+          }
+        }
+        if (
           registration?.active &&
           typeof registration.showNotification === 'function'
         ) {
           await registration.showNotification(title, {
             body,
-            tag: alert.id,
+            tag: notificationTag,
             icon: '/icons/icon-192.png',
             data: {
               eventId: alert.eventId,
@@ -99,7 +124,7 @@ export async function sendReminderNotification(
     try {
       const nativeNotif = new window.Notification(title, {
         body,
-        tag: alert.id,
+        tag: notificationTag,
       });
 
       nativeNotif.onclick = () => {
@@ -128,6 +153,7 @@ export function useReminderEngine({
   onUpdateSettings,
   activeTheme,
   onOpenEventById,
+  hasActivePushSubscription = false,
 }: UseReminderEngineOptions) {
   const [permissionStatus, setPermissionStatus] =
     useState<BrowserPermissionState>(() => readNotificationPermission());
@@ -199,11 +225,17 @@ export function useReminderEngine({
         return [alert, ...prev].slice(0, 5);
       });
 
-      if (settings.desktopEnabled) {
+      if (settings.desktopEnabled && !hasActivePushSubscription) {
         void sendReminderNotification(alert, onOpenEventById);
       }
     },
-    [activeTheme, onOpenEventById, settings.desktopEnabled, settings.soundEnabled]
+    [
+      activeTheme,
+      hasActivePushSubscription,
+      onOpenEventById,
+      settings.desktopEnabled,
+      settings.soundEnabled,
+    ]
   );
 
   // Precision 1-second timer checking exact 10-minute pre-event threshold

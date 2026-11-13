@@ -9,6 +9,10 @@ import React, {
 import type { Session, User } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../services/supabase';
 import { clearLocalUploadDismissals } from '../services/cloudSync';
+import {
+  cleanupPushSubscriptionBeforeSignOut,
+  unsubscribeBrowserPushOnly,
+} from '../services/pushNotifications';
 
 export interface AuthContextValue {
   user: User | null;
@@ -63,7 +67,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
-      if (event === 'SIGNED_OUT' || !nextSession) {
+      if (event === 'SIGNED_OUT') {
+        clearLocalUploadDismissals();
+        void unsubscribeBrowserPushOnly();
+      } else if (!nextSession) {
         clearLocalUploadDismissals();
       }
       setSession(nextSession);
@@ -104,6 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const signOut = useCallback(async () => {
     setAuthError(null);
     clearLocalUploadDismissals();
+    await cleanupPushSubscriptionBeforeSignOut();
     if (!supabase) return;
 
     const { error } = await supabase.auth.signOut();

@@ -250,10 +250,42 @@ describe('sendReminderNotification safety and service worker preference', () => 
     expect(showNotification).toHaveBeenCalledWith(
       'Upcoming Event: Algorithms Lecture',
       expect.objectContaining({
-        tag: 'occ-1',
+        tag: 'evt-1|2026-11-11T10:00',
         data: { eventId: 'evt-1', url: '/' },
       })
     );
+    expect(NotificationCtor).not.toHaveBeenCalled();
+  });
+
+  it('skips system notification when this device has an active push subscription', async () => {
+    const showNotification = vi.fn(async () => {});
+    const NotificationCtor = vi.fn();
+    Object.defineProperty(NotificationCtor, 'permission', {
+      value: 'granted',
+      configurable: true,
+    });
+
+    vi.stubGlobal('window', {
+      Notification: NotificationCtor,
+      focus: vi.fn(),
+    });
+    vi.stubGlobal('navigator', {
+      serviceWorker: {
+        getRegistration: vi.fn(async () => ({
+          active: {},
+          showNotification,
+          pushManager: {
+            getSubscription: vi.fn(async () => ({
+              endpoint: 'https://push.example/sub/123',
+            })),
+          },
+        })),
+      },
+    });
+
+    const ok = await sendReminderNotification(sampleAlert);
+    expect(ok).toBe(false);
+    expect(showNotification).not.toHaveBeenCalled();
     expect(NotificationCtor).not.toHaveBeenCalled();
   });
 
