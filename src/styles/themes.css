@@ -442,4 +442,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Standalone / mobile safe-area & dynamic viewport layout */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.app-topbar {
+  padding-top: calc(0.625rem + env(safe-area-inset-top, 0px));
+}
+
+.safe-area-drawer {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
 /* Motion, shimmer, and reduced-motion rules live in styles/motion.css */

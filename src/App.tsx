@@ -1346,7 +1346,7 @@ export const App: React.FC = () => {
     <div
       ref={appRootRef}
       data-theme={shellResolved.theme}
-      className="app-shell h-screen w-screen overflow-hidden flex flex-col bg-theme-bg text-theme-text"
+      className="app-shell w-screen overflow-hidden flex flex-col bg-theme-bg text-theme-text"
     >
       {/* Top Navigation Bar */}
       <TopNavBar

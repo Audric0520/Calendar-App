@@ -142,7 +142,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   const themeMeta = THEME_DEFINITIONS[activeTheme];
 
   return (
-    <header className="app-topbar shrink-0 border-b border-theme-border bg-theme-surface/95 backdrop-blur-md px-3 sm:px-5 py-2.5 z-30">
+    <header className="app-topbar shrink-0 border-b border-theme-border bg-theme-surface/95 backdrop-blur-md px-3 sm:px-5 pb-2.5 z-30">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         {/* Left: Sidebar Toggle + Brand + Navigation Controls */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">

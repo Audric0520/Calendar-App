@@ -39,6 +39,89 @@ interface UseReminderEngineOptions {
   onOpenEventById?: (eventId: string) => void;
 }
 
+function readNotificationPermission(): BrowserPermissionState {
+  try {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return 'unsupported';
+    }
+    return window.Notification.permission;
+  } catch {
+    return 'unsupported';
+  }
+}
+
+export async function sendReminderNotification(
+  alert: ReminderAlert,
+  onOpenEventById?: (eventId: string) => void
+): Promise<boolean> {
+  try {
+    if (
+      typeof window === 'undefined' ||
+      !('Notification' in window) ||
+      window.Notification.permission !== 'granted'
+    ) {
+      return false;
+    }
+
+    const timeStr = format(alert.start, 'h:mm a');
+    const bodyParts = [`Starts in 10 minutes (${timeStr})`];
+    if (alert.location) bodyParts.push(`Location: ${alert.location}`);
+    const title = `Upcoming Event: ${alert.title}`;
+    const body = bodyParts.join(' • ');
+
+    if (
+      typeof navigator !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      typeof navigator.serviceWorker.getRegistration === 'function'
+    ) {
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (
+          registration?.active &&
+          typeof registration.showNotification === 'function'
+        ) {
+          await registration.showNotification(title, {
+            body,
+            tag: alert.id,
+            icon: '/icons/icon-192.png',
+            data: {
+              eventId: alert.eventId,
+              url: '/',
+            },
+          });
+          return true;
+        }
+      } catch {
+        // Fall back to window.Notification if SW registration notification fails
+      }
+    }
+
+    try {
+      const nativeNotif = new window.Notification(title, {
+        body,
+        tag: alert.id,
+      });
+
+      nativeNotif.onclick = () => {
+        try {
+          window.focus();
+          if (onOpenEventById && alert.eventId) {
+            onOpenEventById(alert.eventId);
+          }
+          nativeNotif.close();
+        } catch {
+          // Ignore focus/close errors
+        }
+      };
+      return true;
+    } catch {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
 export function useReminderEngine({
   events,
   settings,
@@ -47,24 +130,19 @@ export function useReminderEngine({
   onOpenEventById,
 }: UseReminderEngineOptions) {
   const [permissionStatus, setPermissionStatus] =
-    useState<BrowserPermissionState>(() => {
-      if (typeof window === 'undefined' || !('Notification' in window)) {
-        return 'unsupported';
-      }
-      return window.Notification.permission;
-    });
+    useState<BrowserPermissionState>(() => readNotificationPermission());
 
   const [activeToasts, setActiveToasts] = useState<ReminderAlert[]>([]);
   const [nowTick, setNowTick] = useState<number>(() => Date.now());
   const firedRef = useRef<Record<string, number>>(loadFiredReminders());
 
   const requestBrowserPermission = useCallback(async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      setPermissionStatus('unsupported');
-      return 'unsupported' as const;
-    }
-
     try {
+      if (typeof window === 'undefined' || !('Notification' in window)) {
+        setPermissionStatus('unsupported');
+        return 'unsupported' as const;
+      }
+
       const result = await window.Notification.requestPermission();
       setPermissionStatus(result);
       onUpdateSettings({
@@ -73,88 +151,56 @@ export function useReminderEngine({
       });
       return result;
     } catch {
-      const current = window.Notification.permission;
+      const current = readNotificationPermission();
       setPermissionStatus(current);
       return current;
     }
   }, [onUpdateSettings, settings]);
 
-  // Request browser Notification permission automatically on first visit
+  // Keep permission status synced without auto-prompting on app load
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      setPermissionStatus('unsupported');
+    const syncPermission = () => {
+      setPermissionStatus(readNotificationPermission());
+    };
+
+    syncPermission();
+
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
       return;
     }
 
-    setPermissionStatus(window.Notification.permission);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncPermission();
+      }
+    };
 
-    if (
-      window.Notification.permission === 'default' &&
-      !settings.hasRequestedPermission
-    ) {
-      window.Notification.requestPermission()
-        .then((res) => {
-          setPermissionStatus(res);
-          onUpdateSettings({
-            ...settings,
-            hasRequestedPermission: true,
-          });
-        })
-        .catch(() => {
-          // Some browsers require explicit click gesture; keep button available
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    window.addEventListener('focus', syncPermission);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', syncPermission);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const dispatchAlert = useCallback(
     (alert: ReminderAlert) => {
       if (settings.soundEnabled) {
-        playReminderChime(activeTheme);
-      }
-
-      let nativeDelivered = false;
-      if (
-        typeof window !== 'undefined' &&
-        'Notification' in window &&
-        window.Notification.permission === 'granted' &&
-        settings.desktopEnabled
-      ) {
-        try {
-          const timeStr = format(alert.start, 'h:mm a');
-          const bodyParts = [`Starts in 10 minutes (${timeStr})`];
-          if (alert.location) bodyParts.push(`Location: ${alert.location}`);
-
-          const nativeNotif = new window.Notification(
-            `Upcoming Event: ${alert.title}`,
-            {
-              body: bodyParts.join(' • '),
-              tag: alert.id,
-            }
-          );
-
-          nativeNotif.onclick = () => {
-            window.focus();
-            if (onOpenEventById) {
-              onOpenEventById(alert.eventId);
-            }
-            nativeNotif.close();
-          };
-          nativeDelivered = true;
-        } catch {
-          nativeDelivered = false;
-        }
+        void playReminderChime(activeTheme);
       }
 
       // Always surface the animated in-app toast alert when native notifications
       // are denied/unsupported/blocked, and also keep a visual banner inside the app
       // so users in embedded/sandboxed viewports always see the 10-minute alert.
-      if (!nativeDelivered || true) {
-        setActiveToasts((prev) => {
-          const exists = prev.some((t) => t.id === alert.id);
-          if (exists) return prev;
-          return [alert, ...prev].slice(0, 5);
-        });
+      setActiveToasts((prev) => {
+        const exists = prev.some((t) => t.id === alert.id);
+        if (exists) return prev;
+        return [alert, ...prev].slice(0, 5);
+      });
+
+      if (settings.desktopEnabled) {
+        void sendReminderNotification(alert, onOpenEventById);
       }
     },
     [activeTheme, onOpenEventById, settings.desktopEnabled, settings.soundEnabled]
