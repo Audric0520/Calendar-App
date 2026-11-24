@@ -9,6 +9,7 @@ export const THEME_MOTION: Record<ThemeId, { glow: string }> = {
   dark: { glow: 'rgba(96, 165, 250, 0.5)' },
   ooo: { glow: 'rgba(250, 204, 21, 0.55)' },
   wednesday: { glow: 'rgba(230, 225, 215, 0.42)' },
+  gengar: { glow: 'rgba(168, 85, 247, 0.55)' },
 };
 
 /** Default glow when an unknown theme id slips through. */
