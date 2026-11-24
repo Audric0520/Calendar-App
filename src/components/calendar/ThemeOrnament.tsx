@@ -1,6 +1,7 @@
 import React from 'react';
 import oooLogoUrl from '../../assets/OOO_LOGO.png?url';
 import wednesdayLogoUrl from '../../assets/wednesday-logo.png?url';
+import gengarLogoUrl from '../../assets/Gengar_Logo.png?url';
 import { ThemeId } from '../../types/calendar';
 
 interface ThemeOrnamentProps {
@@ -104,40 +105,24 @@ export const ThemeOrnament: React.FC<ThemeOrnamentProps> = ({
       );
 
     case 'gengar':
-      // Grinning shadow-ghost face — violet head with pointed spikes, gold
-      // mischievous eyes and the signature white crescent grin, matching the
-      // Gengar mood-board ornament footprint used by every call site.
       return (
-        <svg
+        <img
+          src={gengarLogoUrl}
           width={size}
           height={size}
-          viewBox="0 0 24 24"
-          fill="none"
-          className={className}
+          alt=""
           aria-hidden="true"
-        >
-          <path
-            d="M4.4 7.6 2.9 2.7 7.7 5.3 Z"
-            fill="#7c4dbd"
-            stroke="#4c2d7f"
-            strokeWidth="1"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M19.6 7.6 21.1 2.7 16.3 5.3 Z"
-            fill="#7c4dbd"
-            stroke="#4c2d7f"
-            strokeWidth="1"
-            strokeLinejoin="round"
-          />
-          <circle cx="12" cy="13.2" r="8.1" fill="#7c4dbd" stroke="#4c2d7f" strokeWidth="1" />
-          <path d="M6.5 10.8 10.3 12.3 6.5 14 Z" fill="#fbbf24" />
-          <path d="M17.5 10.8 13.7 12.3 17.5 14 Z" fill="#fbbf24" />
-          <path
-            d="M6.8 15.3 Q12 20.1 17.2 15.3 Q12 17.7 6.8 15.3 Z"
-            fill="#ffffff"
-          />
-        </svg>
+          draggable={false}
+          className={className}
+          style={{
+            width: `${size}px`,
+            height: `${size}px`,
+            display: 'block',
+            objectFit: 'contain',
+            flexShrink: 0,
+            userSelect: 'none',
+          }}
+        />
       );
   }
 };
