@@ -189,6 +189,67 @@
   color-scheme: dark;
 }
 
+/* 7. GENGAR (Pokémon) — Deep aubergine shadow, glowing violet aura, neon-magenta
+   sparks and toxic-lime mischief, sampled from the Gengar mood-board references:
+   aubergine #160b24, glow violet #a855f7, neon magenta #f472b6, toxic lime #a3e635. */
+[data-theme='gengar'] {
+  --t-is-dark: 1;
+
+  /* Surfaces — deep aubergine shadow, like a purple forest at night */
+  --t-bg-primary: #160b24;
+  --t-bg-surface: #1e1130;
+  --t-bg-elevated: #291842;
+  --t-bg-cell: #1a0e2a;
+  --t-bg-cell-muted: #120819;
+  --t-bg-cell-hover: #2e1a48;
+  --t-bg-today: #48216f;
+
+  /* Lines — violet-smoke hairlines that glow at full strength */
+  --t-border: #4c3370;
+  --t-border-strong: #c084fc;
+
+  /* Type — pale lavender mist */
+  --t-text-primary: #f7f0ff;
+  --t-text-secondary: #cbb6e8;
+  --t-text-muted: #9480b5;
+
+  /* Accent — glowing violet (Gengar's shadow aura) */
+  --t-accent: #a855f7;
+  --t-accent-hover: #9333ea;
+  --t-accent-soft: rgba(168, 85, 247, 0.2);
+  --t-accent-contrast: #ffffff;
+  --t-accent-2: #f472b6;
+  --t-accent-3: #a3e635;
+
+  --t-shadow: 0 6px 22px -4px rgba(20, 6, 38, 0.6);
+  --t-shadow-lg: 0 22px 50px -10px rgba(12, 3, 24, 0.85);
+
+  /* Header band — violet glow falling over the panel */
+  --t-header-gradient: linear-gradient(
+    135deg,
+    #241338 0%,
+    #2f1949 45%,
+    #1c0e2c 100%
+  );
+
+  /* Cell wash — a violet breath at the top and a faint magenta→lime mischief
+     shimmer at the base */
+  --t-cell-overlay: radial-gradient(
+      circle at 50% 0%,
+      rgba(192, 132, 252, 0.06),
+      transparent 62%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(244, 114, 182, 0) 55%,
+      rgba(244, 114, 182, 0.035) 78%,
+      rgba(163, 230, 53, 0.03) 100%
+    );
+
+  --t-font-display: inherit;
+  color-scheme: dark;
+}
+
 /* ----------------------------------------------------------------------------
    WEDNESDAY ATMOSPHERE LAYER
    Version-pinned grain, gothic arched framing and smoked-glass panels. Every
@@ -316,6 +377,119 @@
   height: 1px;
 }
 
+/* ----------------------------------------------------------------------------
+   GENGAR ATMOSPHERE LAYER
+   Neon violet glow, magenta sparks and toxic-lime mischief. Every rule is
+   scoped to `[data-theme='gengar']`, so the other themes are untouched even
+   though they share the same component classes.
+   ---------------------------------------------------------------------------- */
+
+/* Neon-glass frame: the calendar card, sidebar and modals glow at their edges */
+[data-theme='gengar'] .gothic-frame,
+[data-theme='gengar'] .gothic-frame-arch {
+  position: relative;
+  border-radius: 1.15rem;
+}
+
+[data-theme='gengar'] .gothic-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.16),
+    inset 0 1px 0 0 rgba(244, 114, 182, 0.18), 0 0 22px -6px rgba(168, 85, 247, 0.35);
+}
+
+/* Smoked neon-glass panels for popovers / elevated cards */
+[data-theme='gengar'] .gothic-panel {
+  background-image: linear-gradient(
+    180deg,
+    rgba(192, 132, 252, 0.07) 0%,
+    rgba(168, 85, 247, 0.02) 42%,
+    rgba(20, 6, 38, 0.3) 100%
+  );
+  box-shadow: inset 0 1px 0 0 rgba(192, 132, 252, 0.14),
+    0 10px 28px -12px rgba(12, 3, 24, 0.85);
+  border-color: rgba(192, 132, 252, 0.2);
+}
+
+/* Display type — violet rim glow like neon signage */
+[data-theme='gengar'] .gothic-display {
+  text-shadow: 0 1px 0 rgba(12, 3, 24, 0.85), 0 0 18px rgba(168, 85, 247, 0.35);
+}
+
+/* Violet glow focus ring: keyboard focus stays visible on aubergine surfaces */
+[data-theme='gengar'] :focus-visible {
+  outline: 2px solid rgba(192, 132, 252, 0.8);
+  outline-offset: 2px;
+}
+
+/* Text selection reads as neon magenta */
+[data-theme='gengar'] ::selection {
+  background-color: rgba(244, 114, 182, 0.35);
+  color: #f7f0ff;
+}
+
+/* Shell: aubergine fall with violet glow bleeding from the top and a magenta
+   mischief breath at the base, like the glowing purple-forest reference */
+[data-theme='gengar'].app-shell {
+  background-image: radial-gradient(
+      ellipse 110% 70% at 50% -8%,
+      rgba(168, 85, 247, 0.16),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 90% 55% at 50% 112%,
+      rgba(244, 114, 182, 0.08),
+      transparent 66%
+    ),
+    linear-gradient(180deg, #1c0e2e 0%, #160b24 55%, #10071c 100%);
+}
+
+/* Top bar: glowing violet keyline */
+[data-theme='gengar'] .app-topbar {
+  border-bottom-color: rgba(192, 132, 252, 0.28);
+  background-image: linear-gradient(
+    180deg,
+    rgba(168, 85, 247, 0.09) 0%,
+    rgba(12, 3, 24, 0.25) 100%
+  );
+  box-shadow: 0 1px 0 0 rgba(12, 3, 24, 0.7), 0 10px 26px -20px rgba(168, 85, 247, 0.8);
+}
+
+/* Sidebar column: violet smoke wash */
+[data-theme='gengar'] .sidebar-shell {
+  background-image: linear-gradient(
+    180deg,
+    rgba(168, 85, 247, 0.06) 0%,
+    rgba(12, 3, 24, 0.2) 100%
+  );
+}
+
+/* Weekday / day-name header bands: violet glow underline */
+[data-theme='gengar'] .calendar-header-band {
+  background-image: linear-gradient(
+    180deg,
+    rgba(192, 132, 252, 0.08) 0%,
+    rgba(192, 132, 252, 0.015) 100%
+  );
+  border-bottom-color: rgba(192, 132, 252, 0.45);
+}
+
+/* Neon rule used by headers and section rules: violet fading through magenta */
+[data-theme='gengar'] .gothic-rule {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(168, 85, 247, 0.55) 18%,
+    rgba(244, 114, 182, 0.8) 50%,
+    rgba(168, 85, 247, 0.55) 82%,
+    transparent 100%
+  );
+  height: 1px;
+}
+
 /* ============================================================================
    SCOPED PER-WEEK ROW FRAMING & THEMATIC SIGNATURES
    Strictly scoped to `.week-row-scope[data-theme="..."]` (siblings, never nested)
@@ -418,6 +592,43 @@
       rgba(255, 255, 255, 0.014) 0%,
       transparent 42%,
       rgba(201, 138, 90, 0.04) 100%
+    );
+}
+
+/* Gengar Week Signature: shadowy violet rail with a neon magenta→lime mischief
+   spark — the tri-color echo of the cosmic swirl reference art. */
+.week-row-scope[data-theme='gengar'] {
+  box-shadow: inset 0 1px 0 0 rgba(192, 132, 252, 0.12),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.7);
+}
+.week-row-scope[data-theme='gengar']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    #7c3aed 0%,
+    #a855f7 30%,
+    #f472b6 66%,
+    #a3e635 100%
+  );
+}
+.week-row-scope[data-theme='gengar'] > .week-cells-grid > .calendar-day-cell {
+  background-image: radial-gradient(
+      circle at 50% 0%,
+      rgba(192, 132, 252, 0.06),
+      transparent 66%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.015) 0%,
+      transparent 42%,
+      rgba(244, 114, 182, 0.04) 100%
     );
 }
 

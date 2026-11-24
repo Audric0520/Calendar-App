@@ -55,6 +55,10 @@ export async function playReminderChime(theme: ThemeId = 'light'): Promise<void>
       // Gothic minor bell chord: D5 - F5 - A5 - D6
       notes = [587.33, 698.46, 880.0, 1174.66];
       waveType = 'triangle';
+    } else if (theme === 'gengar') {
+      // Mischievous minor haunt: D#5 - F#5 - A#5 - C#6
+      notes = [622.25, 739.99, 932.33, 1108.73];
+      waveType = 'triangle';
     } else if (theme === 'dark') {
       notes = [440.0, 554.37, 659.25, 880.0]; // Warm A major chime
     }

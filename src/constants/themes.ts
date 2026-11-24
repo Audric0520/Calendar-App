@@ -71,6 +71,20 @@ export const THEME_DEFINITIONS: Record<ThemeId, ThemeDefinition> = {
     badgeText: '#f2efe8',
     badgeBorder: '#cfc9bf',
   },
+  gengar: {
+    id: 'gengar',
+    name: 'Gengar',
+    shortName: 'Gengar',
+    group: 'Gengar',
+    tagline: 'Neon violet shadow & toxic-lime mischief',
+    description:
+      'Deep aubergine shadows lit by glowing violet, neon-magenta sparks, and toxic-lime mischief — a grinning ghost in a purple forest.',
+    isDark: true,
+    swatches: ['#160b24', '#a855f7', '#a3e635'],
+    badgeBg: '#2b1547',
+    badgeText: '#e9d5ff',
+    badgeBorder: '#a855f7',
+  },
 };
 
 export const THEME_LIST: ThemeDefinition[] = [
@@ -78,6 +92,7 @@ export const THEME_LIST: ThemeDefinition[] = [
   THEME_DEFINITIONS.dark,
   THEME_DEFINITIONS.ooo,
   THEME_DEFINITIONS.wednesday,
+  THEME_DEFINITIONS.gengar,
 ];
 
 export const THEME_GROUPS: { group: ThemeGroup; subtitle: string; themes: ThemeDefinition[] }[] = [
@@ -98,5 +113,10 @@ export const THEME_GROUPS: { group: ThemeGroup; subtitle: string; themes: ThemeD
     group: 'Wednesday',
     subtitle: 'Addams / Nevermore gothic obsidian & stained-glass architecture',
     themes: [THEME_DEFINITIONS.wednesday],
+  },
+  {
+    group: 'Gengar',
+    subtitle: 'Shadowy poison prankster — neon violet glow & toxic-lime mischief',
+    themes: [THEME_DEFINITIONS.gengar],
   },
 ];

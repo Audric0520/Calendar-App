@@ -4,9 +4,10 @@ export type ThemeId =
   | 'light'
   | 'dark'
   | 'ooo'
-  | 'wednesday';
+  | 'wednesday'
+  | 'gengar';
 
-export type ThemeGroup = 'Standard Modes' | 'Kamen Rider OOO' | 'Wednesday';
+export type ThemeGroup = 'Standard Modes' | 'Kamen Rider OOO' | 'Wednesday' | 'Gengar';
 
 export type RecurrenceRule =
   | 'none'

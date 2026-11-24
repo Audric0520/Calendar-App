@@ -1313,6 +1313,7 @@ export const App: React.FC = () => {
       'light',
       'wednesday',
       'ooo',
+      'gengar',
       'dark',
     ];
     setThemePrefs((prev) => {

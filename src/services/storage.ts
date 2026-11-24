@@ -31,7 +31,7 @@ const LS_KEYS = {
   VISIBLE_SCOPES: 'chronopalette_visible_scopes_v3',
 };
 
-const VALID_THEMES = new Set<ThemeId>(['light', 'dark', 'ooo', 'wednesday']);
+const VALID_THEMES = new Set<ThemeId>(['light', 'dark', 'ooo', 'wednesday', 'gengar']);
 
 const DEFAULT_THEME_PREFS: ThemePreferences = {
   globalTheme: 'light',
